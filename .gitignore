@@ -1,0 +1,16 @@
+# Ignorar dependências e build
+node_modules/
+dist/
+.env
+.env.local
+.env.production
+.vercel
+.DS_Store
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Arquivos de sistema
+Thumbs.db
