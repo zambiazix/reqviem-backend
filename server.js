@@ -1,3 +1,4 @@
+// server.js
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
@@ -66,7 +67,7 @@ app.use(
   })
 );
 
-// ✅ Express 5 não aceita "*", substituímos por regex global:
+// Substitui app.options("*", ...) por regex (compatível Express 4/5)
 app.options(/.*/, cors());
 
 // --- Body parser / static ---
@@ -143,6 +144,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 });
 
 // --- Servir músicas ---
+// pasta: ./musicas
 const musicDir = path.join(__dirname, "musicas");
 if (!fs.existsSync(musicDir)) {
   try {
@@ -151,12 +153,25 @@ if (!fs.existsSync(musicDir)) {
     console.warn("Não foi possível criar pasta musicas:", e);
   }
 }
+
+// ADICIONA CORS HEADER **específico** para /musicas e depois serve os arquivos
+app.use("/musicas", (req, res, next) => {
+  // permite qualquer origem para stream de áudio (se preferir, trocar por ALLOWED_ORIGINS check)
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS");
+  // necessário em alguns cenários para range requests
+  res.setHeader("Accept-Ranges", "bytes");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 app.use(
   "/musicas",
   express.static(musicDir, {
     setHeaders: (res, filePath) => {
       if (filePath.endsWith(".mp3")) {
         res.setHeader("Content-Type", "audio/mpeg");
+        // Accept-Ranges adicionado também no middleware acima, mas repetimos pra garantir
         res.setHeader("Accept-Ranges", "bytes");
       } else if (filePath.endsWith(".m4a")) {
         res.setHeader("Content-Type", "audio/mp4");
