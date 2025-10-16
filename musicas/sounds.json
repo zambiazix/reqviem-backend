@@ -1,0 +1,38 @@
+{
+  "music": [
+    "Aventura.mp3",
+    "BatalhaFinal.mp3",
+    "BatalhaMaritima.mp3",
+    "BatalhaMedieval.mp3",
+    "BatalhaMilitar.mp3",
+    "BatalhaEmGrupo.mp3",
+    "Coliseu.mp3",
+    "ComprasNaCidade.mp3",
+    "Deserto.mp3",
+    "Guerra.mp3",
+    "Infiltracao.mp3",
+    "Inverno.mp3",
+    "Ludico.mp3",
+    "Misterioso.mp3",
+    "Navio.mp3",
+    "Perseguicao.mp3",
+    "Rio.mp3",
+    "Taverna1.mp3",
+    "Taverna.mp3",
+    "Viagem.mp3",
+    "VilarejoFeliz.mp3",
+    "VoltaParaCasa.mp3"
+  ],
+  "ambience": [
+    "CavernaComAgua.mp3",
+    "Chuva2.mp3",
+    "Chuva.mp3",
+    "CidadeChuvosa.mp3",
+    "CidadeNova.mp3",
+    "Fogueira.mp3",
+    "NavioAmbiente.mp3",
+    "PessoasConversando.mp3",
+    "Trovao1.mp3",
+    "Trovao.mp3"
+  ]
+}

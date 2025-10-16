@@ -8,30 +8,78 @@ import cors from "cors";
 import axios from "axios";
 import FormData from "form-data";
 import dotenv from "dotenv";
+import { fileURLToPath } from "url";
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // --- Inicialização ---
 const app = express();
 const server = http.createServer(app);
+
+// --- Helper: monta lista de origins permitidos a partir de env (comma separated) + defaults ---
+function getAllowedOrigins() {
+  const fromEnv = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const defaults = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+    "https://reqviem.vercel.app",
+    "https://www.reqviem.vercel.app",
+    "https://reqviem-backend.vercel.app",
+  ];
+  const list = Array.from(new Set([...fromEnv, ...defaults]));
+  return list;
+}
+const ALLOWED_ORIGINS = getAllowedOrigins();
+
+// --- Configura Socket.IO com CORS controlado ---
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+      console.warn("Socket.IO CORS blocked origin:", origin);
+      return callback(new Error("Not allowed by CORS"));
+    },
     methods: ["GET", "POST"],
     credentials: true,
   },
 });
 
-app.use(cors({ origin: "*", credentials: true }));
+// --- Middleware CORS express com callback (origem dinâmica) ---
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+      console.warn("HTTP CORS blocked origin:", origin);
+      return callback(new Error("Not allowed by CORS"));
+    },
+    methods: ["GET", "POST", "OPTIONS"],
+    credentials: true,
+  })
+);
+
+app.options("*", cors());
+
+// Body parser / static public (mantido)
 app.use(express.json());
-app.use(express.static("public"));
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, "public")));
 
 // --- Pasta temporária para uploads locais ---
 const uploadsDir = path.join(process.cwd(), "uploads_tmp");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
 // --- Detecta ambiente serverless ---
-const isServerless = process.env.RENDER || process.env.VERCEL;
+const isServerless = Boolean(process.env.RENDER || process.env.VERCEL);
 
 // --- Multer config ---
 const storage = isServerless
@@ -43,34 +91,79 @@ const storage = isServerless
     });
 const upload = multer({ storage });
 
-// --- Upload para Imgbb ---
+// --- Upload para Imgbb (corrigido para funcionar em todos ambientes) ---
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado" });
 
     const IMGBB_KEY = process.env.IMGBB_API_KEY;
-    if (!IMGBB_KEY) return res.status(500).json({ error: "IMGBB_API_KEY não configurada" });
+    if (!IMGBB_KEY)
+      return res.status(500).json({ error: "IMGBB_API_KEY não configurada" });
 
     const form = new FormData();
     form.append("key", IMGBB_KEY);
-    if (isServerless) form.append("image", req.file.buffer.toString("base64"));
-    else form.append("image", fs.createReadStream(req.file.path));
+
+    // ✅ Tratamento de buffer seguro e compatível com Node 18+ (Vercel/Render)
+    if (isServerless) {
+      const base64 = req.file.buffer.toString("base64");
+      form.append("image", base64);
+    } else {
+      form.append("image", fs.createReadStream(req.file.path));
+    }
 
     const resp = await axios.post("https://api.imgbb.com/1/upload", form, {
       headers: form.getHeaders(),
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      timeout: 60000,
     });
 
-    if (!isServerless && req.file.path) fs.unlinkSync(req.file.path);
+    // remove arquivo local se não for serverless
+    if (!isServerless && req.file.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch {}
+    }
 
     const url = resp.data?.data?.url || resp.data?.data?.display_url;
-    if (!url) return res.status(500).json({ error: "Erro: Imgbb não retornou URL" });
+    if (!url)
+      return res
+        .status(500)
+        .json({ error: "Erro: Imgbb não retornou URL válida", raw: resp.data });
 
     res.json({ url });
   } catch (err) {
-    console.error("Erro upload:", err.response?.data || err.message);
-    res.status(500).json({ error: "Falha no upload" });
+    console.error("❌ Erro upload Imgbb:", err.response?.data || err.message || err);
+    res.status(500).json({
+      error: "Falha no upload",
+      details: err.response?.data || err.message,
+    });
   }
 });
+
+// --- Servir músicas com MIME correto e Accept-Ranges ---
+const musicDir = path.join(__dirname, "musicas");
+if (!fs.existsSync(musicDir)) {
+  try {
+    fs.mkdirSync(musicDir);
+  } catch (e) {
+    console.warn("Não foi possível criar pasta musicas:", e);
+  }
+}
+app.use(
+  "/musicas",
+  express.static(musicDir, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".mp3")) {
+        res.setHeader("Content-Type", "audio/mpeg");
+        res.setHeader("Accept-Ranges", "bytes");
+      } else if (filePath.endsWith(".m4a")) {
+        res.setHeader("Content-Type", "audio/mp4");
+        res.setHeader("Accept-Ranges", "bytes");
+      }
+    },
+  })
+);
 
 // --- Tokens e Persistência ---
 let tokens = [];
@@ -86,7 +179,9 @@ function loadTokens() {
 function saveTokens(data) {
   try {
     fs.writeFileSync(TOKENS_FILE, JSON.stringify(data, null, 2));
-  } catch {}
+  } catch (e) {
+    console.warn("Erro ao salvar tokens:", e);
+  }
 }
 tokens = loadTokens();
 
@@ -100,7 +195,7 @@ io.on("connection", (socket) => {
 
   // --- TOKENS ---
   socket.on("addToken", (token) => {
-    if (!token.id || !token.src) return;
+    if (!token || !token.id || !token.src) return;
     if (!tokens.find((t) => t.id === token.id)) {
       tokens.push(token);
       saveTokens(tokens);
@@ -115,7 +210,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("reorder", (newTokens) => {
-    tokens = newTokens;
+    tokens = Array.isArray(newTokens) ? newTokens : tokens;
     saveTokens(tokens);
     io.emit("reorder", tokens);
   });
@@ -137,7 +232,11 @@ io.on("connection", (socket) => {
 
   // --- VOZ ---
   socket.on("voice-join", ({ nick }) => {
-    participants[socket.id] = { id: socket.id, nick: nick || "SemNome", speaking: false };
+    participants[socket.id] = {
+      id: socket.id,
+      nick: nick || "SemNome",
+      speaking: false,
+    };
     io.emit("voice-participants", Object.values(participants));
   });
 
@@ -147,11 +246,10 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ✅ Correção: broadcast global de evento de fala
   socket.on("voice-speaking", ({ id, speaking }) => {
     if (!id || !participants[id]) return;
-    participants[id].speaking = speaking;
-    io.emit("voice-speaking", { id, speaking });
+    participants[id].speaking = !!speaking;
+    io.emit("voice-speaking", { id, speaking: !!speaking });
   });
 
   socket.on("voice-leave", () => {
@@ -167,6 +265,8 @@ io.on("connection", (socket) => {
 
 // --- Inicializa Servidor ---
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () =>
-  console.log(`🚀 Servidor rodando em http://localhost:${PORT}`)
-);
+server.listen(PORT, () => {
+  console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
+  console.log("🔒 Allowed origins:", ALLOWED_ORIGINS);
+  console.log("🎵 Music folder:", musicDir);
+});
