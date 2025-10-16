@@ -19,7 +19,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = http.createServer(app);
 
-// --- Helper: monta lista de origins permitidos a partir de env (comma separated) + defaults ---
+// --- Helper: lista de origins permitidos ---
 function getAllowedOrigins() {
   const fromEnv = (process.env.ALLOWED_ORIGINS || "")
     .split(",")
@@ -34,8 +34,7 @@ function getAllowedOrigins() {
     "https://www.reqviem.vercel.app",
     "https://reqviem-backend.vercel.app",
   ];
-  const list = Array.from(new Set([...fromEnv, ...defaults]));
-  return list;
+  return Array.from(new Set([...fromEnv, ...defaults]));
 }
 const ALLOWED_ORIGINS = getAllowedOrigins();
 
@@ -67,14 +66,15 @@ app.use(
   })
 );
 
-app.options("*", cors());
+// ✅ Express 5 não aceita "*", substituímos por regex global:
+app.options(/.*/, cors());
 
-// Body parser / static public (mantido)
+// --- Body parser / static ---
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
-// --- Pasta temporária para uploads locais ---
+// --- Pasta temporária ---
 const uploadsDir = path.join(process.cwd(), "uploads_tmp");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
@@ -91,19 +91,21 @@ const storage = isServerless
     });
 const upload = multer({ storage });
 
-// --- Upload para Imgbb (corrigido para funcionar em todos ambientes) ---
+// --- Upload para Imgbb ---
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado" });
+    if (!req.file)
+      return res.status(400).json({ error: "Nenhum arquivo enviado" });
 
     const IMGBB_KEY = process.env.IMGBB_API_KEY;
     if (!IMGBB_KEY)
-      return res.status(500).json({ error: "IMGBB_API_KEY não configurada" });
+      return res
+        .status(500)
+        .json({ error: "IMGBB_API_KEY não configurada no servidor" });
 
     const form = new FormData();
     form.append("key", IMGBB_KEY);
 
-    // ✅ Tratamento de buffer seguro e compatível com Node 18+ (Vercel/Render)
     if (isServerless) {
       const base64 = req.file.buffer.toString("base64");
       form.append("image", base64);
@@ -118,7 +120,6 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       timeout: 60000,
     });
 
-    // remove arquivo local se não for serverless
     if (!isServerless && req.file.path) {
       try {
         fs.unlinkSync(req.file.path);
@@ -133,7 +134,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
     res.json({ url });
   } catch (err) {
-    console.error("❌ Erro upload Imgbb:", err.response?.data || err.message || err);
+    console.error("❌ Erro upload Imgbb:", err.response?.data || err.message);
     res.status(500).json({
       error: "Falha no upload",
       details: err.response?.data || err.message,
@@ -141,7 +142,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-// --- Servir músicas com MIME correto e Accept-Ranges ---
+// --- Servir músicas ---
 const musicDir = path.join(__dirname, "musicas");
 if (!fs.existsSync(musicDir)) {
   try {
