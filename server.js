@@ -15,16 +15,18 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- Inicialização ---
 const app = express();
 const server = http.createServer(app);
 
-// --- Helper: lista de origins permitidos ---
+// -------------------------------------------------------------
+// 🔒 CORS / Origins permitidos
+// -------------------------------------------------------------
 function getAllowedOrigins() {
   const fromEnv = (process.env.ALLOWED_ORIGINS || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+
   const defaults = [
     "http://localhost:5173",
     "http://localhost:3000",
@@ -34,17 +36,18 @@ function getAllowedOrigins() {
     "https://www.reqviem.vercel.app",
     "https://reqviem-backend.vercel.app",
   ];
+
   return Array.from(new Set([...fromEnv, ...defaults]));
 }
+
 const ALLOWED_ORIGINS = getAllowedOrigins();
 
-// --- Configura Socket.IO com CORS controlado ---
 const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
       if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-      console.warn("Socket.IO CORS blocked origin:", origin);
+      console.warn("⚠️ Socket.IO CORS bloqueado:", origin);
       return callback(new Error("Not allowed by CORS"));
     },
     methods: ["GET", "POST"],
@@ -52,13 +55,17 @@ const io = new Server(server, {
   },
 });
 
-// --- Middleware CORS express com callback (origem dinâmica) ---
+// Log de erros de conexão
+io.engine.on("connection_error", (err) => {
+  console.error("🚨 Socket.IO connection error:", err.req?.headers?.origin, err.code, err.message);
+});
+
 app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
       if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-      console.warn("HTTP CORS blocked origin:", origin);
+      console.warn("⚠️ HTTP CORS bloqueado:", origin);
       return callback(new Error("Not allowed by CORS"));
     },
     methods: ["GET", "POST", "OPTIONS"],
@@ -67,44 +74,35 @@ app.use(
 );
 
 app.options(/.*/, cors());
-
-// --- Body parser / static ---
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
-// --- Pasta temporária ---
+// -------------------------------------------------------------
+// 📁 Uploads / Imgbb
+// -------------------------------------------------------------
 const uploadsDir = path.join(process.cwd(), "uploads_tmp");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// --- Detecta ambiente serverless ---
 const isServerless = Boolean(process.env.RENDER || process.env.VERCEL);
 
-// --- Multer config ---
 const storage = isServerless
   ? multer.memoryStorage()
   : multer.diskStorage({
       destination: (req, file, cb) => cb(null, uploadsDir),
-      filename: (req, file, cb) =>
-        cb(null, Date.now() + path.extname(file.originalname)),
+      filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)),
     });
+
 const upload = multer({ storage });
 
-// --- Upload para Imgbb ---
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
-    if (!req.file)
-      return res.status(400).json({ error: "Nenhum arquivo enviado" });
-
+    if (!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado" });
     const IMGBB_KEY = process.env.IMGBB_API_KEY;
-    if (!IMGBB_KEY)
-      return res
-        .status(500)
-        .json({ error: "IMGBB_API_KEY não configurada no servidor" });
+    if (!IMGBB_KEY) return res.status(500).json({ error: "IMGBB_API_KEY ausente" });
 
     const form = new FormData();
     form.append("key", IMGBB_KEY);
-
     if (isServerless) {
       const base64 = req.file.buffer.toString("base64");
       form.append("image", base64);
@@ -114,8 +112,6 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
     const resp = await axios.post("https://api.imgbb.com/1/upload", form, {
       headers: form.getHeaders(),
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
       timeout: 60000,
     });
 
@@ -126,28 +122,24 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     }
 
     const url = resp.data?.data?.url || resp.data?.data?.display_url;
-    if (!url)
-      return res
-        .status(500)
-        .json({ error: "Erro: Imgbb não retornou URL válida", raw: resp.data });
+    if (!url) return res.status(500).json({ error: "Erro: URL inválida do Imgbb" });
 
     res.json({ url });
   } catch (err) {
-    console.error("❌ Erro upload Imgbb:", err.response?.data || err.message);
-    res.status(500).json({
-      error: "Falha no upload",
-      details: err.response?.data || err.message,
-    });
+    console.error("❌ Erro upload:", err.response?.data || err.message);
+    res.status(500).json({ error: "Falha no upload", details: err.message });
   }
 });
 
-// --- Servir músicas ---
+// -------------------------------------------------------------
+// 🎵 Músicas
+// -------------------------------------------------------------
 const musicDir = path.join(__dirname, "musicas");
 if (!fs.existsSync(musicDir)) {
   try {
     fs.mkdirSync(musicDir);
   } catch (e) {
-    console.warn("Não foi possível criar pasta musicas:", e);
+    console.warn("Não foi possível criar pasta 'musicas':", e);
   }
 }
 
@@ -165,16 +157,16 @@ app.use(
     setHeaders: (res, filePath) => {
       if (filePath.endsWith(".mp3")) {
         res.setHeader("Content-Type", "audio/mpeg");
-        res.setHeader("Accept-Ranges", "bytes");
       } else if (filePath.endsWith(".m4a")) {
         res.setHeader("Content-Type", "audio/mp4");
-        res.setHeader("Accept-Ranges", "bytes");
       }
     },
   })
 );
 
-// --- Tokens e Persistência ---
+// -------------------------------------------------------------
+// ⚙️ Tokens e persistência
+// -------------------------------------------------------------
 let tokens = [];
 const TOKENS_FILE = path.join(process.cwd(), "tokens.json");
 function loadTokens() {
@@ -194,15 +186,16 @@ function saveTokens(data) {
 }
 tokens = loadTokens();
 
-// --- Estado dos participantes de voz ---
-let participants = {}; // { socket.id: { id, nick, speaking } }
+// -------------------------------------------------------------
+// 🎤 Voz
+// -------------------------------------------------------------
+let participants = {}; // { id, nick, speaking }
 
-// --- Sockets ---
 io.on("connection", (socket) => {
-  console.log("🟢 Novo jogador conectado:", socket.id);
+  console.log("🟢 Novo jogador:", socket.id);
   socket.emit("init", tokens);
 
-  // --- TOKENS ---
+  // TOKENS
   socket.on("addToken", (token) => {
     if (!token || !token.id || !token.src) return;
     if (!tokens.find((t) => t.id === token.id)) {
@@ -230,40 +223,39 @@ io.on("connection", (socket) => {
     io.emit("deleteToken", id);
   });
 
-  // --- MÚSICA ---
-  socket.on("play-music", (url) => {
-    console.log("🎵 Tocando música:", url);
-    socket.broadcast.emit("play-music", url);
-  });
+  // 🎵 MÚSICA
+  socket.on("play-music", (url) => socket.broadcast.emit("play-music", url));
+  socket.on("stop-music", (url) => socket.broadcast.emit("stop-music", url));
+  socket.on("stop-all-music", () => socket.broadcast.emit("stop-all-music"));
+  socket.on("volume-music", (data) => socket.broadcast.emit("volume-music", data));
 
-  socket.on("stop-music", (url) => {
-    console.log("⏹️ Parar música:", url);
-    socket.broadcast.emit("stop-music", url);
-  });
-
-  socket.on("stop-all-music", () => {
-    console.log("🛑 Parar todas as músicas");
-    socket.broadcast.emit("stop-all-music");
-  });
-
-  socket.on("volume-music", (data) => {
-    console.log("🎚️ Volume alterado:", data.url, data.value);
-    socket.broadcast.emit("volume-music", data);
-  });
-
-  // --- VOZ ---
+  // 🎙️ VOZ
   socket.on("voice-join", ({ nick }) => {
-    participants[socket.id] = {
-      id: socket.id,
-      nick: nick || "SemNome",
-      speaking: false,
-    };
+    participants[socket.id] = { id: socket.id, nick: nick || "SemNome", speaking: false };
     io.emit("voice-participants", Object.values(participants));
   });
 
-  socket.on("voice-signal", ({ target, data }) => {
-    if (target && io.sockets.sockets.get(target)) {
-      io.to(target).emit("voice-signal", { from: socket.id, data });
+  // ✅ FIX: Reenvio seguro do SDP e ICE
+  socket.on("voice-signal", (payload) => {
+    try {
+      if (!payload || !payload.target) return;
+      const target = payload.target;
+      const data = payload.data ? JSON.parse(JSON.stringify(payload.data)) : null;
+
+      if (data?.sdp) {
+        console.log(`📡 ${data.sdp.type.toUpperCase()} de ${socket.id} → ${target}`);
+      } else if (data?.candidate) {
+        console.log(`🧊 ICE candidate de ${socket.id} → ${target}`);
+      }
+
+      const targetSocket = io.sockets.sockets.get(target);
+      if (targetSocket) {
+        io.to(target).emit("voice-signal", { from: socket.id, data });
+      } else {
+        console.warn("⚠️ Target socket não encontrado:", target);
+      }
+    } catch (err) {
+      console.error("❌ Erro em voice-signal:", err);
     }
   });
 
@@ -284,10 +276,12 @@ io.on("connection", (socket) => {
   });
 });
 
-// --- Inicializa Servidor ---
+// -------------------------------------------------------------
+// 🚀 Inicialização
+// -------------------------------------------------------------
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
   console.log("🔒 Allowed origins:", ALLOWED_ORIGINS);
-  console.log("🎵 Music folder:", musicDir);
+  console.log("🎵 Pasta de músicas:", musicDir);
 });
