@@ -10,6 +10,7 @@ import axios from "axios";
 import FormData from "form-data";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
+import { AccessToken } from "livekit-server-sdk";
 
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
@@ -215,6 +216,37 @@ function releaseNegotiation(socketId) {
     return false;
   }
 }
+
+app.post("/livekit/token", async (req, res) => {
+  try {
+    const { room, identity, name } = req.body;
+
+    if (!room || !identity) {
+      return res.status(400).json({ error: "Dados inválidos" });
+    }
+
+    const token = new AccessToken(
+      process.env.LIVEKIT_API_KEY,
+      process.env.LIVEKIT_API_SECRET,
+      {
+        identity,
+        name: name || identity,
+      }
+    );
+
+    token.addGrant({
+      room,
+      roomJoin: true,
+      canPublish: true,
+      canSubscribe: true,
+    });
+
+    res.json({ token: token.toJwt() });
+  } catch (err) {
+    console.error("LiveKit token error:", err);
+    res.status(500).json({ error: "Erro ao gerar token" });
+  }
+});
 
 io.on("connection", (socket) => {
   console.log("🟢 Novo jogador conectado:", socket.id);
