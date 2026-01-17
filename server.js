@@ -217,7 +217,7 @@ function releaseNegotiation(socketId) {
   }
 }
 
-app.post("/livekit/token", (req, res) => {
+app.post("/livekit/token", async (req, res) => {
   try {
     const { room, identity, name } = req.body;
 
@@ -225,7 +225,7 @@ app.post("/livekit/token", (req, res) => {
       return res.status(400).json({ error: "Dados inválidos" });
     }
 
-    const at = new AccessToken(
+    const token = new AccessToken(
       process.env.LIVEKIT_API_KEY,
       process.env.LIVEKIT_API_SECRET,
       {
@@ -234,21 +234,26 @@ app.post("/livekit/token", (req, res) => {
       }
     );
 
-    at.addGrant({
+    token.addGrant({
       room,
       roomJoin: true,
       canPublish: true,
       canSubscribe: true,
     });
 
-    // 🔴 ISSO É O QUE IMPORTA
-    const jwt = at.toJwt();
+    // 🔥 AQUI ESTAVA A CAGADA
+    const jwt = await token.toJwt();
+    console.log("JWT:", jwt, typeof jwt);
 
-    // 🔴 RETORNE A STRING, NÃO O OBJETO
-    return res.json({ token: jwt });
+    if (typeof jwt !== "string") {
+      console.error("❌ JWT não é string:", jwt);
+      return res.status(500).json({ error: "JWT inválido" });
+    }
+
+    res.json({ token: jwt });
   } catch (err) {
-    console.error("LiveKit token error:", err);
-    return res.status(500).json({ error: "Erro ao gerar token" });
+    console.error("❌ LiveKit token error:", err);
+    res.status(500).json({ error: "Erro ao gerar token" });
   }
 });
 
