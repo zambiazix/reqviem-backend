@@ -28,7 +28,7 @@ const io = new Server(server, {
 });
 
 /* ===============================
-   📤 UPLOAD IMGBB (MANTIDO)
+   📤 UPLOAD IMGBB
 ================================ */
 
 const uploadsDir = path.join(process.cwd(), "uploads_tmp");
@@ -63,7 +63,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 });
 
 /* ===============================
-   🎵 PASTA DE MÚSICAS (MANTIDO)
+   🎵 PASTA DE MÚSICAS
 ================================ */
 
 const musicDir = path.join(__dirname, "musicas");
@@ -78,20 +78,29 @@ app.use("/musicas", (req, res, next) => {
 app.use("/musicas", express.static(musicDir));
 
 /* ===============================
-   🎤 LIVEKIT TOKEN
+   🎤 LIVEKIT TOKEN (CORRIGIDO)
 ================================ */
 
 app.post("/livekit/token", async (req, res) => {
   try {
-    const { room, identity, name } = req.body;
+    const { room, identity, name, avatar } = req.body;
 
-    if (!room || !identity)
-      return res.status(400).json({ error: "room e identity obrigatórios" });
+    if (!room || !identity) {
+      return res.status(400).json({
+        error: "room e identity são obrigatórios",
+      });
+    }
 
     const token = new AccessToken(
       process.env.LIVEKIT_API_KEY,
       process.env.LIVEKIT_API_SECRET,
-      { identity, name: name || identity }
+      {
+        identity,
+        name: name || identity,
+        metadata: JSON.stringify({
+          avatar: avatar || null,
+        }),
+      }
     );
 
     token.addGrant({
@@ -102,6 +111,7 @@ app.post("/livekit/token", async (req, res) => {
     });
 
     const jwt = await token.toJwt();
+
     res.json({ token: jwt });
   } catch (err) {
     console.error("LiveKit token error:", err);
@@ -110,7 +120,7 @@ app.post("/livekit/token", async (req, res) => {
 });
 
 /* ===============================
-   🔊 SOCKET.IO (MÚSICA APENAS)
+   🔊 SOCKET.IO (MÚSICA)
 ================================ */
 
 io.on("connection", (socket) => {
