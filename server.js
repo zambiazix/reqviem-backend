@@ -17,29 +17,36 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
+const allowedOrigins = [
+  "https://reqviem.vercel.app",
+  "http://localhost:5173",
+  "http://localhost:3000"
+];
 
-app.use(cors({
-  origin: [
-    "https://reqviem.vercel.app",   // FRONTEND (IMPORTANTE)
-    "http://localhost:5173",
-    "http://localhost:3000"
-  ],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
 
-app.options("*", cors());
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
 const io = new Server(server, {
   cors: {
-    origin: [
-      "https://reqviem.vercel.app",
-      "http://localhost:5173",
-      "http://localhost:5000"
-    ],
+    origin: allowedOrigins,
     methods: ["GET", "POST"]
   }
 });
