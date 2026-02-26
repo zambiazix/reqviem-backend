@@ -20,16 +20,28 @@ const server = http.createServer(app);
 
 app.use(cors({
   origin: [
-    "https://reqviem.onrender.com"
+    "https://reqviem.vercel.app",   // FRONTEND (IMPORTANTE)
+    "http://localhost:5173",
+    "http://localhost:3000"
   ],
-  credentials: true
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
+
+app.options("*", cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
 const io = new Server(server, {
-  cors: { origin: true, credentials: true },
+  cors: {
+    origin: [
+      "https://reqviem.vercel.app",
+      "http://localhost:5173",
+      "http://localhost:5000"
+    ],
+    methods: ["GET", "POST"]
+  }
 });
 
 /* ===============================
