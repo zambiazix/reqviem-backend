@@ -18,7 +18,12 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = http.createServer(app);
 
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors({
+  origin: [
+    "https://reqviem.onrender.com"
+  ],
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
