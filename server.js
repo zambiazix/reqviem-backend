@@ -120,11 +120,42 @@ app.post("/livekit/token", async (req, res) => {
 });
 
 /* ===============================
-   🔊 SOCKET.IO (MÚSICA)
+   🔊 SOCKET.IO (MÚSICA + GRID)
 ================================ */
+
+let tokens = [];
 
 io.on("connection", (socket) => {
   console.log("🟢 Conectado:", socket.id);
+
+  /* ===== Envia estado atual do grid para quem entrou ===== */
+  socket.emit("init", tokens);
+
+  /* ===== GRID ===== */
+
+  socket.on("addToken", (token) => {
+    tokens.push(token);
+    io.emit("addToken", token);
+  });
+
+  socket.on("updateToken", (updatedToken) => {
+    tokens = tokens.map((t) =>
+      t.id === updatedToken.id ? updatedToken : t
+    );
+    socket.broadcast.emit("updateToken", updatedToken);
+  });
+
+  socket.on("deleteToken", (id) => {
+    tokens = tokens.filter((t) => t.id !== id);
+    io.emit("deleteToken", id);
+  });
+
+  socket.on("reorder", (newOrder) => {
+    tokens = newOrder;
+    io.emit("reorder", tokens);
+  });
+
+  /* ===== MÚSICA ===== */
 
   socket.on("play-music", (url) => {
     socket.broadcast.emit("play-music", {
@@ -146,6 +177,100 @@ io.on("connection", (socket) => {
   });
 });
 
+
+/* ===============================
+   🎞️ GIF SEARCH (GIPHY + REDGIFS)
+================================ */
+
+// Cache do token RedGifs
+let redgifsToken = null;
+let redgifsTokenExpire = 0;
+
+// 🔐 Função para pegar token temporário RedGifs
+async function getRedgifsToken() {
+  if (redgifsToken && Date.now() < redgifsTokenExpire) {
+    return redgifsToken;
+  }
+
+  const response = await axios.get(
+    "https://api.redgifs.com/v2/auth/temporary"
+  );
+
+  redgifsToken = response.data.token;
+  redgifsTokenExpire = Date.now() + 60 * 60 * 1000; // 1 hora
+
+  return redgifsToken;
+}
+
+/* ===============================
+   🔴 REDGIFS SEARCH
+================================ */
+
+app.get("/api/redgifs/search", async (req, res) => {
+  try {
+    const { q = "", count = 20 } = req.query;
+
+    const token = await getRedgifsToken();
+
+    const response = await axios.get(
+      "https://api.redgifs.com/v2/gifs/search",
+      {
+        params: {
+          search_text: q,
+          count,
+        },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const gifs = response.data.gifs.map((g) => ({
+      id: g.id,
+      preview: g.urls.small,
+      original: g.urls.hd || g.urls.sd,
+    }));
+
+    res.json(gifs);
+  } catch (err) {
+    console.error("RedGifs error:", err.response?.data || err.message);
+    res.status(500).json({ error: "Erro ao buscar RedGifs" });
+  }
+});
+
+/* ===============================
+   🟣 GIPHY SEARCH
+================================ */
+
+app.get("/api/giphy/search", async (req, res) => {
+  try {
+    const { q = "", offset = 0 } = req.query;
+
+    const response = await axios.get(
+      "https://api.giphy.com/v1/gifs/search",
+      {
+        params: {
+          api_key: process.env.GIPHY_KEY,
+          q,
+          limit: 20,
+          offset,
+          rating: "r",
+        },
+      }
+    );
+
+    const gifs = response.data.data.map((g) => ({
+      id: g.id,
+      preview: g.images.fixed_height.url,
+      original: g.images.original.url,
+    }));
+
+    res.json(gifs);
+  } catch (err) {
+    console.error("Giphy error:", err.response?.data || err.message);
+    res.status(500).json({ error: "Erro ao buscar Giphy" });
+  }
+});
 /* =============================== */
 
 const PORT = process.env.PORT || 5000;
