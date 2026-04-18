@@ -52,7 +52,7 @@ const io = new Server(server, {
 });
 
 /* ===============================
-   📤 UPLOAD IMGBB
+   📤 CONFIGURAÇÃO UPLOAD
 ================================ */
 
 const uploadsDir = path.join(process.cwd(), "uploads_tmp");
@@ -61,27 +61,130 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
+// 🟢 FUNÇÃO PARA UPLOAD DE IMAGEM (IMGBB)
+async function uploadToImgBB(file) {
+  const IMGBB_KEY = process.env.IMGBB_API_KEY;
+  if (!IMGBB_KEY) throw new Error("IMGBB_API_KEY não configurada");
+
+  const form = new FormData();
+  form.append("key", IMGBB_KEY);
+  form.append("image", file.buffer.toString("base64"));
+
+  const resp = await axios.post("https://api.imgbb.com/1/upload", form, {
+    headers: form.getHeaders(),
+  });
+
+  return resp.data?.data?.url;
+}
+
+// 🟢 FUNÇÃO PARA UPLOAD DE ÁUDIO (CLOUDINARY) - COM DEBUG
+async function uploadToCloudinary(file) {
+  try {
+    console.log('📤 Iniciando upload para Cloudinary...');
+    console.log('📤 Nome do arquivo:', file.originalname);
+    console.log('📤 Tamanho:', file.size, 'bytes');
+    
+    const formData = new FormData();
+    
+    // Converte o buffer para base64
+    const base64 = file.buffer.toString('base64');
+    console.log('📤 Base64 gerado, tamanho:', base64.length);
+    
+    formData.append("file", `data:audio/mp3;base64,${base64}`);
+    formData.append("upload_preset", "requiem");
+    // IMPORTANTE: Remova o cloud_name daqui - já está na URL!
+    
+    console.log('📤 Enviando para Cloudinary...');
+    
+    const resp = await axios.post(
+      "https://api.cloudinary.com/v1_1/dwaxw0l83/auto/upload",
+      formData,
+      { 
+        headers: { 
+          ...formData.getHeaders(),
+          'Content-Type': 'multipart/form-data'
+        } 
+      }
+    );
+    
+    console.log('✅ Resposta Cloudinary:', resp.data);
+    
+    if (resp.data?.secure_url) {
+      return resp.data.secure_url;
+    } else if (resp.data?.url) {
+      return resp.data.url;
+    } else {
+      console.error('❌ Resposta sem URL:', resp.data);
+      throw new Error("Cloudinary não retornou URL");
+    }
+  } catch (err) {
+    console.error('❌ Erro detalhado Cloudinary:', {
+      message: err.message,
+      response: err.response?.data,
+      status: err.response?.status,
+      headers: err.response?.headers
+    });
+    throw err;
+  }
+}
+/* ===============================
+   📤 ROTA UPLOAD UNIFICADA (IMAGEM + ÁUDIO)
+================================ */
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
-    if (!req.file)
+    if (!req.file) {
       return res.status(400).json({ error: "Nenhum arquivo enviado" });
+    }
 
-    const IMGBB_KEY = process.env.IMGBB_API_KEY;
-    if (!IMGBB_KEY)
-      return res.status(500).json({ error: "IMGBB_API_KEY não configurada" });
-
-    const form = new FormData();
-    form.append("key", IMGBB_KEY);
-    form.append("image", req.file.buffer.toString("base64"));
-
-    const resp = await axios.post("https://api.imgbb.com/1/upload", form, {
-      headers: form.getHeaders(),
-    });
-
-    const url = resp.data?.data?.url;
-    res.json({ url });
+    const file = req.file;
+    const isAudio = file.mimetype.startsWith('audio/');
+    
+    console.log(`📤 Upload recebido: ${file.originalname} (${isAudio ? 'ÁUDIO' : 'IMAGEM'})`);
+    
+    if (isAudio) {
+      // Upload para Cloudinary (áudio)
+      const formData = new FormData();
+      formData.append("file", `data:${file.mimetype};base64,${file.buffer.toString('base64')}`);
+      formData.append("upload_preset", "requiem");
+      
+      const resp = await axios.post(
+        "https://api.cloudinary.com/v1_1/dwaxw0l83/auto/upload",
+        formData,
+        { headers: formData.getHeaders() }
+      );
+      
+      const url = resp.data?.secure_url;
+      if (url) {
+        console.log('✅ Upload Cloudinary sucesso:', url);
+        res.json({ url });
+      } else {
+        throw new Error("Cloudinary não retornou URL");
+      }
+    } else {
+      // Upload para ImgBB (imagem)
+      const IMGBB_KEY = process.env.IMGBB_API_KEY;
+      if (!IMGBB_KEY) {
+        throw new Error("IMGBB_API_KEY não configurada");
+      }
+      
+      const form = new FormData();
+      form.append("key", IMGBB_KEY);
+      form.append("image", file.buffer.toString("base64"));
+      
+      const resp = await axios.post("https://api.imgbb.com/1/upload", form, {
+        headers: form.getHeaders(),
+      });
+      
+      const url = resp.data?.data?.url;
+      if (url) {
+        console.log('✅ Upload ImgBB sucesso:', url);
+        res.json({ url });
+      } else {
+        throw new Error("ImgBB não retornou URL");
+      }
+    }
   } catch (err) {
-    console.error("Erro upload:", err);
+    console.error("❌ Erro upload:", err.response?.data || err.message);
     res.status(500).json({ error: "Falha no upload" });
   }
 });
@@ -152,10 +255,7 @@ let tokens = [];
 io.on("connection", (socket) => {
   console.log("🟢 Conectado:", socket.id);
 
-  /* ===== Envia estado atual do grid para quem entrou ===== */
   socket.emit("init", tokens);
-
-  /* ===== GRID ===== */
 
   socket.on("addToken", (token) => {
     tokens.push(token);
@@ -179,8 +279,6 @@ io.on("connection", (socket) => {
     io.emit("reorder", tokens);
   });
 
-  /* ===== MÚSICA ===== */
-
   socket.on("play-music", (url) => {
     socket.broadcast.emit("play-music", {
       url,
@@ -201,16 +299,13 @@ io.on("connection", (socket) => {
   });
 });
 
-
 /* ===============================
    🎞️ GIF SEARCH (GIPHY + REDGIFS)
 ================================ */
 
-// Cache do token RedGifs
 let redgifsToken = null;
 let redgifsTokenExpire = 0;
 
-// 🔐 Função para pegar token temporário RedGifs
 async function getRedgifsToken() {
   if (redgifsToken && Date.now() < redgifsTokenExpire) {
     return redgifsToken;
@@ -221,14 +316,10 @@ async function getRedgifsToken() {
   );
 
   redgifsToken = response.data.token;
-  redgifsTokenExpire = Date.now() + 60 * 60 * 1000; // 1 hora
+  redgifsTokenExpire = Date.now() + 60 * 60 * 1000;
 
   return redgifsToken;
 }
-
-/* ===============================
-   🔴 REDGIFS SEARCH
-================================ */
 
 app.get("/api/redgifs/search", async (req, res) => {
   try {
@@ -262,10 +353,6 @@ app.get("/api/redgifs/search", async (req, res) => {
   }
 });
 
-/* ===============================
-   🟣 GIPHY SEARCH
-================================ */
-
 app.get("/api/giphy/search", async (req, res) => {
   try {
     const { q = "", offset = 0 } = req.query;
@@ -295,7 +382,6 @@ app.get("/api/giphy/search", async (req, res) => {
     res.status(500).json({ error: "Erro ao buscar Giphy" });
   }
 });
-/* =============================== */
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
