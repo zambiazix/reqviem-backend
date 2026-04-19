@@ -280,19 +280,25 @@ io.on("connection", (socket) => {
   });
 
   socket.on("play-music", (url) => {
-    socket.broadcast.emit("play-music", {
-      url,
-      startedAt: Date.now(),
-    });
-  });
+  console.log('🎵 Play recebido:', url);
+  // Envia a URL para TODOS os outros clientes
+  socket.broadcast.emit("play-music", url);
+});
 
-  socket.on("stop-music", () => {
-    socket.broadcast.emit("stop-music");
-  });
+socket.on("stop-music", (url) => {
+  console.log('🎵 Stop recebido:', url);
+  // Envia a URL para TODOS os outros clientes
+  socket.broadcast.emit("stop-music", url);
+});
 
-  socket.on("volume-music", (data) => {
-    socket.broadcast.emit("volume-music", data);
-  });
+socket.on("stop-all-music", () => {
+  console.log('🎵 Stop ALL recebido');
+  socket.broadcast.emit("stop-all-music");
+});
+
+socket.on("volume-music", (data) => {
+  socket.broadcast.emit("volume-music", data);
+});
 
   socket.on("disconnect", () => {
     console.log("🔴 Desconectado:", socket.id);
