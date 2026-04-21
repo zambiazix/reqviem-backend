@@ -171,6 +171,7 @@ async function compressAudio(buffer, originalName) {
 }
 
 // 🟢🟢🟢 AQUI! COLOQUE A ROTA /upload AGORA! 🟢🟢🟢
+// 🟢🟢🟢 AQUI! COLOQUE A ROTA /upload AGORA! 🟢🟢🟢
 app.post("/upload", upload.single("file"), async (req, res) => {
   console.log("=".repeat(50));
   console.log("📤 NOVO UPLOAD RECEBIDO");
@@ -214,7 +215,10 @@ app.post("/upload", upload.single("file"), async (req, res) => {
         contentType: 'audio/mp3'
       });
       
-      // 🟢 Tenta sem preset primeiro
+      // 🟢🟢🟢 ADICIONE ESTAS DUAS LINHAS! 🟢🟢🟢
+      formData.append("upload_preset", "rpg_musicas");
+      formData.append("resource_type", "auto");
+      
       const resp = await axios.post(
         "https://api.cloudinary.com/v1_1/dwaxw0l83/auto/upload",
         formData,
