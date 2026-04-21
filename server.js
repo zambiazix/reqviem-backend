@@ -10,6 +10,15 @@ import FormData from "form-data";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { AccessToken } from "livekit-server-sdk";
+// 🟢 ADICIONE ESTAS LINHAS NO TOPO (junto com os outros imports)
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegStatic from 'ffmpeg-static';
+import ffprobeStatic from 'ffprobe-static';
+import { PassThrough } from 'stream';
+
+// 🟢 Configurar caminhos do ffmpeg (logo após os imports)
+ffmpeg.setFfmpegPath(ffmpegStatic);
+ffmpeg.setFfprobePath(ffprobeStatic.path);
 
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
@@ -77,8 +86,7 @@ async function uploadToImgBB(file) {
   return resp.data?.data?.url;
 }
 
-// 🟢 FUNÇÃO PARA UPLOAD DE ÁUDIO (CLOUDINARY) - COM DEBUG
-// 🟢 FUNÇÃO PARA UPLOAD DE ÁUDIO (CLOUDINARY) - COM DEBUG COMPLETO
+// 🟢 FUNÇÃO PARA UPLOAD DE ÁUDIO (CLOUDINARY)
 async function uploadToCloudinary(file) {
   try {
     console.log('📤 Iniciando upload para Cloudinary...');
@@ -88,13 +96,12 @@ async function uploadToCloudinary(file) {
     
     const formData = new FormData();
     
-    // 🟢 CORREÇÃO: Usar o arquivo diretamente, sem base64
     formData.append("file", file.buffer, {
       filename: file.originalname,
       contentType: file.mimetype
     });
     formData.append("upload_preset", "requiem");
-    formData.append("resource_type", "auto"); // 🟢 Detecta automaticamente
+    formData.append("resource_type", "auto");
     
     console.log('📤 Enviando para Cloudinary com preset:', 'requiem');
     
@@ -132,9 +139,38 @@ async function uploadToCloudinary(file) {
     throw err;
   }
 }
-/* ===============================
-   📤 ROTA UPLOAD UNIFICADA (IMAGEM + ÁUDIO)
-================================ */
+
+// 🟢 FUNÇÃO PARA COMPRIMIR ÁUDIO (DEIXE APENAS UMA!)
+async function compressAudio(buffer, originalName) {
+  return new Promise((resolve, reject) => {
+    const inputStream = new PassThrough();
+    inputStream.end(buffer);
+    
+    const outputBuffers = [];
+    const outputStream = new PassThrough();
+    
+    outputStream.on('data', chunk => outputBuffers.push(chunk));
+    outputStream.on('end', () => resolve(Buffer.concat(outputBuffers)));
+    outputStream.on('error', reject);
+    
+    console.log('🎵 Comprimindo áudio...');
+    
+    ffmpeg(inputStream)
+      .audioBitrate('64k')
+      .audioChannels(1)
+      .audioFrequency(22050)
+      .format('mp3')
+      .on('start', (cmd) => console.log('🎵 FFmpeg iniciado'))
+      .on('end', () => console.log('✅ Compressão concluída'))
+      .on('error', (err) => {
+        console.error('❌ Erro FFmpeg:', err);
+        reject(err);
+      })
+      .pipe(outputStream);
+  });
+}
+
+// 🟢🟢🟢 AQUI! COLOQUE A ROTA /upload AGORA! 🟢🟢🟢
 app.post("/upload", upload.single("file"), async (req, res) => {
   console.log("=".repeat(50));
   console.log("📤 NOVO UPLOAD RECEBIDO");
@@ -150,41 +186,43 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     console.log("📤 Arquivo recebido:", {
       nome: file.originalname,
       mime: file.mimetype,
-      tamanho: file.size,
-      temBuffer: !!file.buffer
+      tamanhoOriginal: (file.size / 1024 / 1024).toFixed(2) + 'MB'
     });
     
     const isAudio = file.mimetype.startsWith('audio/');
-    console.log("📤 Tipo:", isAudio ? "ÁUDIO" : "IMAGEM");
     
     if (isAudio) {
-      console.log("🎵 Processando áudio para Cloudinary...");
+      let audioBuffer = file.buffer;
+      
+      // 🟢 COMPRIME SE FOR MAIOR QUE 5MB
+      if (file.size > 5 * 1024 * 1024) {
+        console.log('🎵 Arquivo > 5MB, comprimindo...');
+        try {
+          audioBuffer = await compressAudio(file.buffer, file.originalname);
+          console.log('✅ Compressão OK! Tamanho final:', (audioBuffer.length / 1024 / 1024).toFixed(2) + 'MB');
+        } catch (compressErr) {
+          console.error('❌ Erro na compressão, enviando original:', compressErr);
+          audioBuffer = file.buffer;
+        }
+      }
+      
+      console.log('🎵 Enviando para Cloudinary...');
       
       const formData = new FormData();
-      formData.append("file", file.buffer, {
-        filename: file.originalname,
-        contentType: file.mimetype
+      formData.append("file", audioBuffer, {
+        filename: file.originalname.replace(/\.[^.]+$/, '.mp3'),
+        contentType: 'audio/mp3'
       });
-      formData.append("upload_preset", "requiem");
       
-      console.log("📤 Enviando para Cloudinary...");
-      console.log("📤 URL:", "https://api.cloudinary.com/v1_1/dwaxw0l83/auto/upload");
-      console.log("📤 Preset:", "requiem");
-      
+      // 🟢 Tenta sem preset primeiro
       const resp = await axios.post(
         "https://api.cloudinary.com/v1_1/dwaxw0l83/auto/upload",
         formData,
         { 
           headers: formData.getHeaders(),
-          timeout: 30000 // 30 segundos
+          timeout: 60000
         }
       );
-      
-      console.log("✅ Cloudinary respondeu:", {
-        status: resp.status,
-        temUrl: !!resp.data?.secure_url,
-        dados: JSON.stringify(resp.data).substring(0, 200)
-      });
       
       const url = resp.data?.secure_url || resp.data?.url;
       
@@ -192,16 +230,15 @@ app.post("/upload", upload.single("file"), async (req, res) => {
         console.log("✅✅✅ SUCESSO! URL:", url);
         return res.json({ url });
       } else {
-        console.error("❌ Cloudinary não retornou URL:", resp.data);
         throw new Error("Cloudinary não retornou URL");
       }
       
     } else {
-      console.log("🖼️ Processando imagem para ImgBB...");
+      // 🟢 IMAGEM
+      console.log('🖼️ Enviando imagem para ImgBB...');
       
       const IMGBB_KEY = process.env.IMGBB_API_KEY;
       if (!IMGBB_KEY) {
-        console.error("❌ IMGBB_API_KEY não configurada");
         throw new Error("IMGBB_API_KEY não configurada");
       }
       
@@ -225,16 +262,12 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     console.error("=".repeat(50));
     console.error("❌❌❌ ERRO NO UPLOAD ❌❌❌");
     console.error("Mensagem:", err.message);
-    console.error("Status:", err.response?.status);
-    console.error("Status Text:", err.response?.statusText);
     console.error("Dados do erro:", err.response?.data);
-    console.error("Headers:", err.response?.headers);
     console.error("=".repeat(50));
     
     res.status(500).json({ 
       error: "Falha no upload",
-      message: err.message,
-      cloudinaryError: err.response?.data || null
+      message: err.message
     });
   }
 });
