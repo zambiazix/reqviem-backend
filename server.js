@@ -100,7 +100,7 @@ async function uploadToCloudinary(file) {
       filename: file.originalname,
       contentType: file.mimetype
     });
-    formData.append("upload_preset", "requiem");
+    formData.append("upload_preset", "rpg_musicas");
     formData.append("resource_type", "auto");
     
     console.log('📤 Enviando para Cloudinary com preset:', 'requiem');
