@@ -78,23 +78,25 @@ async function uploadToImgBB(file) {
 }
 
 // 🟢 FUNÇÃO PARA UPLOAD DE ÁUDIO (CLOUDINARY) - COM DEBUG
+// 🟢 FUNÇÃO PARA UPLOAD DE ÁUDIO (CLOUDINARY) - COM DEBUG COMPLETO
 async function uploadToCloudinary(file) {
   try {
     console.log('📤 Iniciando upload para Cloudinary...');
     console.log('📤 Nome do arquivo:', file.originalname);
+    console.log('📤 MIME type:', file.mimetype);
     console.log('📤 Tamanho:', file.size, 'bytes');
     
     const formData = new FormData();
     
-    // Converte o buffer para base64
-    const base64 = file.buffer.toString('base64');
-    console.log('📤 Base64 gerado, tamanho:', base64.length);
-    
-    formData.append("file", `data:audio/mp3;base64,${base64}`);
+    // 🟢 CORREÇÃO: Usar o arquivo diretamente, sem base64
+    formData.append("file", file.buffer, {
+      filename: file.originalname,
+      contentType: file.mimetype
+    });
     formData.append("upload_preset", "requiem");
-    // IMPORTANTE: Remova o cloud_name daqui - já está na URL!
+    formData.append("resource_type", "auto"); // 🟢 Detecta automaticamente
     
-    console.log('📤 Enviando para Cloudinary...');
+    console.log('📤 Enviando para Cloudinary com preset:', 'requiem');
     
     const resp = await axios.post(
       "https://api.cloudinary.com/v1_1/dwaxw0l83/auto/upload",
@@ -102,16 +104,19 @@ async function uploadToCloudinary(file) {
       { 
         headers: { 
           ...formData.getHeaders(),
-          'Content-Type': 'multipart/form-data'
-        } 
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
       }
     );
     
-    console.log('✅ Resposta Cloudinary:', resp.data);
+    console.log('✅ Resposta Cloudinary completa:', JSON.stringify(resp.data, null, 2));
     
     if (resp.data?.secure_url) {
+      console.log('✅ URL segura:', resp.data.secure_url);
       return resp.data.secure_url;
     } else if (resp.data?.url) {
+      console.log('✅ URL:', resp.data.url);
       return resp.data.url;
     } else {
       console.error('❌ Resposta sem URL:', resp.data);
@@ -122,7 +127,7 @@ async function uploadToCloudinary(file) {
       message: err.message,
       response: err.response?.data,
       status: err.response?.status,
-      headers: err.response?.headers
+      statusText: err.response?.statusText
     });
     throw err;
   }
@@ -131,39 +136,72 @@ async function uploadToCloudinary(file) {
    📤 ROTA UPLOAD UNIFICADA (IMAGEM + ÁUDIO)
 ================================ */
 app.post("/upload", upload.single("file"), async (req, res) => {
+  console.log("=".repeat(50));
+  console.log("📤 NOVO UPLOAD RECEBIDO");
+  console.log("=".repeat(50));
+  
   try {
     if (!req.file) {
+      console.error("❌ NENHUM ARQUIVO RECEBIDO");
       return res.status(400).json({ error: "Nenhum arquivo enviado" });
     }
 
     const file = req.file;
-    const isAudio = file.mimetype.startsWith('audio/');
+    console.log("📤 Arquivo recebido:", {
+      nome: file.originalname,
+      mime: file.mimetype,
+      tamanho: file.size,
+      temBuffer: !!file.buffer
+    });
     
-    console.log(`📤 Upload recebido: ${file.originalname} (${isAudio ? 'ÁUDIO' : 'IMAGEM'})`);
+    const isAudio = file.mimetype.startsWith('audio/');
+    console.log("📤 Tipo:", isAudio ? "ÁUDIO" : "IMAGEM");
     
     if (isAudio) {
-      // Upload para Cloudinary (áudio)
+      console.log("🎵 Processando áudio para Cloudinary...");
+      
       const formData = new FormData();
-      formData.append("file", `data:${file.mimetype};base64,${file.buffer.toString('base64')}`);
+      formData.append("file", file.buffer, {
+        filename: file.originalname,
+        contentType: file.mimetype
+      });
       formData.append("upload_preset", "requiem");
+      
+      console.log("📤 Enviando para Cloudinary...");
+      console.log("📤 URL:", "https://api.cloudinary.com/v1_1/dwaxw0l83/auto/upload");
+      console.log("📤 Preset:", "requiem");
       
       const resp = await axios.post(
         "https://api.cloudinary.com/v1_1/dwaxw0l83/auto/upload",
         formData,
-        { headers: formData.getHeaders() }
+        { 
+          headers: formData.getHeaders(),
+          timeout: 30000 // 30 segundos
+        }
       );
       
-      const url = resp.data?.secure_url;
+      console.log("✅ Cloudinary respondeu:", {
+        status: resp.status,
+        temUrl: !!resp.data?.secure_url,
+        dados: JSON.stringify(resp.data).substring(0, 200)
+      });
+      
+      const url = resp.data?.secure_url || resp.data?.url;
+      
       if (url) {
-        console.log('✅ Upload Cloudinary sucesso:', url);
-        res.json({ url });
+        console.log("✅✅✅ SUCESSO! URL:", url);
+        return res.json({ url });
       } else {
+        console.error("❌ Cloudinary não retornou URL:", resp.data);
         throw new Error("Cloudinary não retornou URL");
       }
+      
     } else {
-      // Upload para ImgBB (imagem)
+      console.log("🖼️ Processando imagem para ImgBB...");
+      
       const IMGBB_KEY = process.env.IMGBB_API_KEY;
       if (!IMGBB_KEY) {
+        console.error("❌ IMGBB_API_KEY não configurada");
         throw new Error("IMGBB_API_KEY não configurada");
       }
       
@@ -177,15 +215,27 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       
       const url = resp.data?.data?.url;
       if (url) {
-        console.log('✅ Upload ImgBB sucesso:', url);
+        console.log("✅ Upload ImgBB sucesso:", url);
         res.json({ url });
       } else {
         throw new Error("ImgBB não retornou URL");
       }
     }
   } catch (err) {
-    console.error("❌ Erro upload:", err.response?.data || err.message);
-    res.status(500).json({ error: "Falha no upload" });
+    console.error("=".repeat(50));
+    console.error("❌❌❌ ERRO NO UPLOAD ❌❌❌");
+    console.error("Mensagem:", err.message);
+    console.error("Status:", err.response?.status);
+    console.error("Status Text:", err.response?.statusText);
+    console.error("Dados do erro:", err.response?.data);
+    console.error("Headers:", err.response?.headers);
+    console.error("=".repeat(50));
+    
+    res.status(500).json({ 
+      error: "Falha no upload",
+      message: err.message,
+      cloudinaryError: err.response?.data || null
+    });
   }
 });
 
