@@ -604,6 +604,296 @@ app.post("/api/admin/list-users", async (req, res) => {
   }
 });
 
+// 🟢 ROTA DE AVALIAÇÃO DE HABILIDADES (IA) - VERSÃO CORRIGIDA E RIGOROSA
+app.post("/api/avaliar-habilidade", async (req, res) => {
+  try {
+    const { nome, descricao, dado, tipoDano, custoPE, condicoes } = req.body;
+    
+    const descLower = (descricao || "").toLowerCase();
+    const nomeLower = (nome || "").toLowerCase();
+    
+    // =============================================
+    // 🟢 ANÁLISE DE PODER BASE (0 a 10)
+    // =============================================
+    let poderBase = 0;
+    
+    // --- PESO DO DADO (1-10) ---
+    poderBase += (Number(dado) || 1) * 0.5;
+    
+    // --- TIPO DE DANO ---
+    const danosFortes = ["Aurano", "Psíquico", "Tóxico", "Térmico"];
+    if (danosFortes.includes(tipoDano)) poderBase += 1.5;
+    
+    // --- CUSTO DE PE (custo alto reduz poder) ---
+    poderBase -= (Number(custoPE) || 0) * 0.15;
+    
+    // =============================================
+    // 🟢 ANÁLISE SEMÂNTICA DA DESCRIÇÃO (MUITO MAIS RIGOROSA)
+    // =============================================
+    
+    // 🔴 PALAVRAS DE PODER ABSOLUTO (muito overpower)
+    if (descLower.includes("mata instantaneamente") || 
+        descLower.includes("morte instantânea") ||
+        descLower.includes("mata qualquer") ||
+        descLower.includes("matar tudo") ||
+        descLower.includes("todos os inimigos") && descLower.includes("mata")) {
+      poderBase += 8; // Extremamente overpower
+    }
+    
+    // 🔴 PALAVRAS DE MORTE GARANTIDA
+    if (descLower.includes("morte certa") || 
+        descLower.includes("mata na hora") ||
+        descLower.includes("sem chance de defesa") ||
+        descLower.includes("impossível de sobreviver")) {
+      poderBase += 7;
+    }
+    
+    // 🔴 DANO EM ÁREA MASSIVO
+    if ((descLower.includes("todos") || descLower.includes("todos os inimigos")) && 
+        (descLower.includes("dano") || descLower.includes("mata") || descLower.includes("destrói"))) {
+      poderBase += 5;
+    }
+    
+    // 🔴 INVENCIBILIDADE
+    if (descLower.includes("invencível") || 
+        descLower.includes("imune a tudo") ||
+        descLower.includes("nada pode") && descLower.includes("atingir") ||
+        descLower.includes("invulnerável")) {
+      poderBase += 6;
+    }
+    
+    // 🟠 PODERES MUITO FORTES
+    if (descLower.includes("controla") && descLower.includes("mente")) poderBase += 4;
+    if (descLower.includes("controla") && descLower.includes("tempo")) poderBase += 5;
+    if (descLower.includes("controla") && descLower.includes("realidade")) poderBase += 6;
+    if (descLower.includes("teleporte")) poderBase += 2;
+    if (descLower.includes("invisível") || descLower.includes("invisibilidade")) poderBase += 2;
+    if (descLower.includes("cura") && descLower.includes("tudo")) poderBase += 3;
+    if (descLower.includes("ressuscita")) poderBase += 5;
+    if (descLower.includes("paralisa")) poderBase += 2;
+    
+    // 🟡 DANO MODERADO
+    if (descLower.includes("dano massivo") || descLower.includes("dano devastador")) poderBase += 4;
+    if (descLower.includes("dano alto") || descLower.includes("dano grande")) poderBase += 3;
+    if (descLower.includes("explosão")) poderBase += 2;
+    if (descLower.includes("corte profundo")) poderBase += 2;
+    
+    // 🟢 DEFESAS
+    if (descLower.includes("escudo") || descLower.includes("defesa")) poderBase += 1;
+    if (descLower.includes("barreira")) poderBase += 1.5;
+    
+    // 🔴 ANÁLISE DO NOME (nomes muito sugestivos)
+    if (nomeLower.includes("morte") || nomeLower.includes("destruição")) poderBase += 3;
+    if (nomeLower.includes("juízo final") || nomeLower.includes("apocalipse")) poderBase += 5;
+    if (nomeLower.includes("deus") || nomeLower.includes("divino")) poderBase += 4;
+    
+    // =============================================
+    // 🟢 NÍVEL DE RESTRIÇÃO (0 a 10)
+    // =============================================
+    let nivelRestricao = 0;
+    
+    const condicoesAnalisadas = (condicoes || []).map(cond => {
+      const descCond = (cond.descricao || "").toLowerCase();
+      let dificuldade = cond.dificuldade || 0;
+      let janela = cond.janela || 0;
+      let custo = cond.custo || 0;
+      let risco = cond.risco || 0;
+      
+      // Só analisa se não foi avaliado manualmente
+      if (dificuldade === 0 && janela === 0 && custo === 0 && risco === 0) {
+        // Dificuldade
+        if (descCond.includes("50 pulos") || descCond.includes("100 flexões") || 
+            descCond.includes("correr 10km") || descCond.includes("1 hora")) dificuldade = 4;
+        else if (descCond.includes("concentração") || descCond.includes("meditar")) dificuldade = 2;
+        else if (descCond.includes("gritar") || descCond.includes("falar")) dificuldade = 1;
+        
+        // Janela
+        if (descCond.includes("eclipse") || descCond.includes("lua cheia") || 
+            descCond.includes("alinhamento")) janela = 5;
+        else if (descCond.includes("noite") || descCond.includes("escuridão")) janela = 3;
+        else if (descCond.includes("dia") || descCond.includes("manhã")) janela = 2;
+        else if (descCond.includes("uma vez por") || descCond.includes("1 vez por")) janela = 4;
+        
+        // Custo
+        if (descCond.includes("vida") || descCond.includes("sangue") || 
+            descCond.includes("morte") || descCond.includes("alma")) custo = 5;
+        else if (descCond.includes("energia") || descCond.includes("cansaço")) custo = 3;
+        else if (descCond.includes("pe") || descCond.includes("aura")) custo = 2;
+        
+        // Risco
+        if (descCond.includes("chance de morrer") || descCond.includes("morte certa")) risco = 5;
+        else if (descCond.includes("pode falhar") || descCond.includes("chance de")) risco = 3;
+        else if (descCond.includes("dano colateral") || descCond.includes("aliados")) risco = 2;
+      }
+      
+      // Peso da condição individual
+      const pesoCond = (dificuldade * 0.3) + (janela * 0.5) + (custo * 0.4) + (risco * 0.6);
+      nivelRestricao += pesoCond;
+      
+      return { ...cond, dificuldade, janela, custo, risco };
+    });
+    
+    // =============================================
+    // 🟢 CÁLCULO DE BALANCEAMENTO
+    // =============================================
+    
+    // Fator de restrição: 0 restrições = fator 1.0 (sem redução)
+    // Muitas restrições = fator 0.2 (80% de redução)
+    const fatorRestricao = Math.max(0.15, 1 - (nivelRestricao / 8));
+    
+    // Poder efetivo = poder base × fator de restrição
+    const poderEfetivo = poderBase * fatorRestricao;
+    
+    // Limite máximo permitido (ajustável)
+    const limiteMaximo = 3;
+    const percentual = Math.min((poderEfetivo / limiteMaximo) * 100, 200);
+    
+    // =============================================
+    // 🟢 CLASSIFICAÇÃO
+    // =============================================
+    let status, mensagem, sugestoes = [];
+    
+    if (nivelRestricao === 0 && poderBase > 5) {
+      status = "Muito Desequilibrada 🔴🔴";
+      mensagem = "Habilidade extremamente forte SEM nenhuma condição! Adicione restrições severas.";
+      sugestoes = [
+        "Adicione pelo menos 2 condições severas",
+        "Condições como 'só funciona 1 vez por dia' ajudam muito",
+        "Riscos como 'chance de perder a própria vida' são poderosos balanceadores"
+      ];
+    } else if (percentual <= 40) {
+      status = "Perfeitamente Equilibrada ✅✅";
+      mensagem = "Excelente! As restrições controlam perfeitamente o poder da habilidade.";
+    } else if (percentual <= 70) {
+      status = "Bem Equilibrada ✅";
+      mensagem = "A habilidade está bem balanceada com as restrições atuais.";
+    } else if (percentual <= 100) {
+      status = "Equilibrada ✅";
+      mensagem = "A habilidade está dentro do limite aceitável.";
+    } else if (percentual <= 130) {
+      status = "Pouco Equilibrada ⚠️";
+      mensagem = "A habilidade está um pouco acima do ideal. Considere adicionar mais condições.";
+      sugestoes = [
+        "Adicione condições de dificuldade (ex: requer concentração)",
+        "Restrinja o uso (ex: só funciona à noite)",
+        "Adicione um custo (ex: consome 5 PE adicionais)"
+      ];
+    } else if (percentual <= 180) {
+      status = "Desequilibrada 🔴";
+      mensagem = "Habilidade muito forte para as restrições atuais. Precisa de mais limitações.";
+      sugestoes = [
+        "Adicione múltiplas condições severas",
+        "Condições com risco de vida são as mais eficazes",
+        "Reduza o dado de dano ou poder base"
+      ];
+    } else {
+      status = "Extremamente Desequilibrada 🔴🔴";
+      mensagem = "Esta habilidade quebra completamente o jogo! Necessita de restrições extremas.";
+      sugestoes = [
+        "Adicione uma condição de 'risco de morte' (nível 5)",
+        "Restrinja para '1 uso por dia' ou menos",
+        "Adicione custo de vida/sangue",
+        "Considere reduzir drasticamente o poder base"
+      ];
+    }
+    
+    res.json({
+      poderBase: Math.min(poderBase, 10),
+      nivelRestricao: Math.min(nivelRestricao, 10),
+      percentual,
+      status,
+      mensagem,
+      sugestoes,
+      condicoesAnalisadas
+    });
+    
+  } catch (error) {
+    console.error("Erro na avaliação:", error);
+    res.status(500).json({ error: "Erro ao avaliar habilidade" });
+  }
+});
+// 🟢 ROTA PARA SALVAR AVALIAÇÕES DO MESTRE (TREINAMENTO) - CORRIGIDA
+app.post("/api/salvar-avaliacao", async (req, res) => {
+  try {
+    const { fichaId, habilidade, avaliacaoMestre, timestamp, mestreEmail } = req.body;
+    
+    console.log("📚 Salvando avaliação do mestre:", {
+      fichaId,
+      habilidade: habilidade.nome,
+      mestre: mestreEmail
+    });
+    
+    // 🟢 CORRIGIDO: Usa doc() com ID automático e set() para garantir criação
+    const docRef = adminDb.collection('treinamentoIA').doc();
+    await docRef.set({
+      fichaId: fichaId || "",
+      habilidade: habilidade || {},
+      avaliacaoMestre: avaliacaoMestre || {},
+      timestamp: timestamp || new Date().toISOString(),
+      mestreEmail: mestreEmail || "",
+      createdAt: new Date().toISOString()
+    });
+    
+    console.log("✅ Avaliação salva com ID:", docRef.id);
+    
+    res.json({ 
+      success: true, 
+      message: "Avaliação salva para treinamento",
+      id: docRef.id
+    });
+    
+  } catch (error) {
+    console.error("❌ Erro ao salvar avaliação:", error);
+    res.status(500).json({ 
+      error: "Erro ao salvar avaliação",
+      message: error.message 
+    });
+  }
+});
+
+// 🟢 ROTA PARA CONSULTAR AVALIAÇÕES SALVAS (APENAS MESTRE) - CORRIGIDA
+app.post("/api/consultar-avaliacoes", async (req, res) => {
+  try {
+    const { mestreEmail } = req.body;
+    const MASTER_EMAIL = "mestre@reqviemrpg.com";
+    
+    if (mestreEmail !== MASTER_EMAIL) {
+      return res.status(403).json({ error: "Apenas o mestre pode consultar" });
+    }
+    
+    // 🟢 CORRIGIDO: Verifica se a coleção existe antes de consultar
+    const snapshot = await adminDb.collection('treinamentoIA')
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+    
+    const avaliacoes = [];
+    
+    if (!snapshot.empty) {
+      snapshot.forEach(doc => {
+        avaliacoes.push({ 
+          id: doc.id, 
+          ...doc.data() 
+        });
+      });
+    }
+    
+    console.log(`📊 ${avaliacoes.length} avaliações encontradas`);
+    
+    res.json({ 
+      avaliacoes,
+      total: avaliacoes.length
+    });
+    
+  } catch (error) {
+    console.error("❌ Erro ao consultar avaliações:", error);
+    res.status(500).json({ 
+      error: "Erro ao consultar avaliações",
+      message: error.message 
+    });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
