@@ -894,6 +894,200 @@ app.post("/api/consultar-avaliacoes", async (req, res) => {
   }
 });
 
+// 🟢🟢🟢 ROTAS DE GERAÇÃO DE HABILIDADES (IA) 🟢🟢🟢
+
+// Listas para geração aleatória
+const NOMES_HABILIDADES = [
+  "Punho do Dragão Celestial", "Lâmina das Sombras Eternas", "Barreira do Sol Nascente",
+  "Garra do Trovão", "Sopro do Fênix", "Corrente do Abismo", "Escudo da Lua Sangrenta",
+  "Rajada de Mil Agulhas", "Dança das Chamas", "Manto da Nevasca", "Olhar Petrificante",
+  "Voz do Silêncio", "Toque da Morte", "Cura Celestial", "Teleporte Quântico",
+  "Campo de Distorção", "Absorção Vital", "Clone das Sombras", "Explosão Astral",
+  "Domínio Temporal", "Corrente Espiritual", "Lâmina Fantasma", "Armadura de Aura",
+  "Grito do Caçador", "Passo das Nuvens", "Prisão de Cristal", "Chuva de Meteoros"
+];
+
+const DESCRICOES_TEMPLATE = [
+  "O usuário concentra sua aura em {alvo}, criando um efeito devastador que {efeito}. A energia flui como {comparacao}, atingindo tudo em seu caminho.",
+  "Manipulando o {elemento} ao seu redor, o usuário manifesta uma técnica que {efeito}. A habilidade requer {requisito} para ser ativada, mas seu poder é inegável.",
+  "Através de um voto de restrição, o usuário sacrifica {sacrificio} para invocar um poder que {efeito}. Quanto maior o risco, mais devastador o resultado.",
+  "Uma técnica secreta passada por gerações, que permite ao usuário {efeito}. O controle preciso da aura é essencial, e apenas mestres conseguem dominá-la.",
+  "Expandindo sua aura para fora do corpo, o usuário cria {criacao} que {efeito}. A manifestação é visível até para não usuários de Nen."
+];
+
+const ELEMENTOS = ["fogo", "gelo", "relâmpago", "vento", "terra", "água", "luz", "sombra", "metal", "planta"];
+const COMPARACOES = ["um rio furioso", "uma tempestade elétrica", "uma avalanche", "um tornado", "raízes crescendo", "ondas do oceano"];
+
+function gerarHabilidadeAleatoria(tipoAura = "Desconhecido") {
+  const nome = NOMES_HABILIDADES[Math.floor(Math.random() * NOMES_HABILIDADES.length)];
+  const elemento = ELEMENTOS[Math.floor(Math.random() * ELEMENTOS.length)];
+  const comparacao = COMPARACOES[Math.floor(Math.random() * COMPARACOES.length)];
+  
+  const template = DESCRICOES_TEMPLATE[Math.floor(Math.random() * DESCRICOES_TEMPLATE.length)];
+  const descricao = template
+    .replace("{alvo}", Math.random() > 0.5 ? "um único alvo" : "todos os inimigos em área")
+    .replace(/{efeito}/g, ["causa dano massivo", "paralisa os oponentes", "cura aliados próximos", "cria uma barreira protetora", "distorce o espaço-tempo", "drena a energia vital"][Math.floor(Math.random() * 6)])
+    .replace("{comparacao}", comparacao)
+    .replace("{elemento}", elemento)
+    .replace("{requisito}", ["contato visual", "um gesto específico", "uma palavra de poder", "concentração total"][Math.floor(Math.random() * 4)])
+    .replace("{sacrificio}", ["parte de sua própria vida", "sua energia por um dia", "a visão de um olho", "memórias preciosas"][Math.floor(Math.random() * 4)])
+    .replace("{criacao}", ["um golem de aura", "uma esfera de energia pura", "um campo de força", "lâminas espectrais"][Math.floor(Math.random() * 4)]);
+  
+  const dado = Math.floor(Math.random() * 8) + 2; // 2 a 9
+  const custoPE = Math.floor(Math.random() * 15) + 3; // 3 a 17
+  
+  const tiposDano = ["Aurano", "Térmico", "Elétrico", "Gélido", "Psíquico", "Cortante", "Contundente", "Perfurante"];
+  const tipoDano = tiposDano[Math.floor(Math.random() * tiposDano.length)];
+  
+  // Gerar 1-3 condições aleatórias
+  const numCondicoes = Math.floor(Math.random() * 3) + 1;
+  const condicoesTemplates = [
+    { desc: "Precisa recitar um encantamento de 10 segundos", dificuldade: 2, janela: 1, custo: 1, risco: 1 },
+    { desc: "Só funciona durante a noite", dificuldade: 1, janela: 4, custo: 0, risco: 1 },
+    { desc: "Consome 5 pontos de vida do usuário", dificuldade: 1, janela: 0, custo: 5, risco: 2 },
+    { desc: "Requer que o alvo esteja a menos de 10 metros", dificuldade: 2, janela: 2, custo: 0, risco: 0 },
+    { desc: "O usuário perde a consciência por 1 minuto após o uso", dificuldade: 1, janela: 1, custo: 2, risco: 5 },
+    { desc: "Só pode ser usada uma vez por dia", dificuldade: 0, janela: 5, custo: 0, risco: 0 },
+    { desc: "Requer um aliado para canalizar energia", dificuldade: 3, janela: 2, custo: 1, risco: 1 },
+    { desc: "20% de chance do usuário sofrer dano colateral", dificuldade: 1, janela: 0, custo: 0, risco: 4 },
+    { desc: "Precisa estar com os pés descalços no chão natural", dificuldade: 2, janela: 1, custo: 0, risco: 0 },
+    { desc: "O alvo precisa estar sangrando", dificuldade: 2, janela: 3, custo: 0, risco: 1 },
+  ];
+  
+  const condicoes = [];
+  const usadas = new Set();
+  for (let i = 0; i < numCondicoes; i++) {
+    let idx;
+    do {
+      idx = Math.floor(Math.random() * condicoesTemplates.length);
+    } while (usadas.has(idx) && usadas.size < condicoesTemplates.length);
+    usadas.add(idx);
+    
+    const template = condicoesTemplates[idx];
+    condicoes.push({
+      id: Date.now() + i,
+      titulo: `Condição ${i + 1}`,
+      descricao: template.desc,
+      dificuldade: template.dificuldade,
+      janela: template.janela,
+      custo: template.custo,
+      risco: template.risco
+    });
+  }
+  
+  return { nome, descricao, dado, custoPE, tipoDano, condicoes };
+}
+
+// 🟢 ROTA PARA GERAR HABILIDADE COMPLETA
+app.post("/api/gerar-habilidade", async (req, res) => {
+  try {
+    const { tipoAura } = req.body;
+    const habilidade = gerarHabilidadeAleatoria(tipoAura);
+    
+    // Pequeno atraso para simular processamento
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    res.json(habilidade);
+  } catch (error) {
+    console.error("Erro ao gerar habilidade:", error);
+    res.status(500).json({ error: "Erro ao gerar habilidade" });
+  }
+});
+
+// 🟢 ROTA PARA GERAR CAMPO ESPECÍFICO
+app.post("/api/gerar-campo-habilidade", async (req, res) => {
+  try {
+    const { campo, habilidadeAtual, tipoAura } = req.body;
+    
+    await new Promise(resolve => setTimeout(resolve, 600));
+    
+    switch (campo) {
+      case "nome":
+        res.json({ 
+          valor: NOMES_HABILIDADES[Math.floor(Math.random() * NOMES_HABILIDADES.length)] 
+        });
+        break;
+        
+      case "descricao":
+        const elemento = ELEMENTOS[Math.floor(Math.random() * ELEMENTOS.length)];
+        const comparacao = COMPARACOES[Math.floor(Math.random() * COMPARACOES.length)];
+        const template = DESCRICOES_TEMPLATE[Math.floor(Math.random() * DESCRICOES_TEMPLATE.length)];
+        res.json({ 
+          valor: template
+            .replace("{alvo}", Math.random() > 0.5 ? "um único alvo" : "todos os inimigos em área")
+            .replace(/{efeito}/g, ["causa dano massivo", "paralisa os oponentes", "cura aliados próximos", "cria uma barreira protetora"][Math.floor(Math.random() * 4)])
+            .replace("{comparacao}", comparacao)
+            .replace("{elemento}", elemento)
+            .replace("{requisito}", ["contato visual", "um gesto específico", "uma palavra de poder"][Math.floor(Math.random() * 3)])
+            .replace("{sacrificio}", ["parte de sua própria vida", "sua energia por um dia"][Math.floor(Math.random() * 2)])
+            .replace("{criacao}", ["um golem de aura", "uma esfera de energia pura"][Math.floor(Math.random() * 2)])
+        });
+        break;
+        
+      case "nome_descricao":
+        const habCompleta = gerarHabilidadeAleatoria(tipoAura);
+        res.json({ nome: habCompleta.nome, descricao: habCompleta.descricao });
+        break;
+        
+      case "dado":
+        res.json({ valor: Math.floor(Math.random() * 8) + 2 });
+        break;
+        
+      case "custoPE":
+        res.json({ valor: Math.floor(Math.random() * 15) + 3 });
+        break;
+        
+      case "tipoDano":
+        const tiposDano = ["Aurano", "Térmico", "Elétrico", "Gélido", "Psíquico", "Cortante", "Contundente", "Perfurante"];
+        res.json({ valor: tiposDano[Math.floor(Math.random() * tiposDano.length)] });
+        break;
+        
+      case "condicoes":
+        const condicoesTemplates = [
+          { desc: "Precisa recitar um encantamento de 10 segundos", dificuldade: 2, janela: 1, custo: 1, risco: 1 },
+          { desc: "Só funciona durante a noite", dificuldade: 1, janela: 4, custo: 0, risco: 1 },
+          { desc: "Consome 5 pontos de vida do usuário", dificuldade: 1, janela: 0, custo: 5, risco: 2 },
+          { desc: "Requer que o alvo esteja a menos de 10 metros", dificuldade: 2, janela: 2, custo: 0, risco: 0 },
+          { desc: "O usuário perde a consciência por 1 minuto", dificuldade: 1, janela: 1, custo: 2, risco: 5 },
+          { desc: "Só pode ser usada uma vez por dia", dificuldade: 0, janela: 5, custo: 0, risco: 0 },
+        ];
+        
+        const numCond = Math.floor(Math.random() * 2) + 1;
+        const condicoesGeradas = [];
+        const usadasSet = new Set();
+        
+        for (let i = 0; i < numCond; i++) {
+          let idx;
+          do {
+            idx = Math.floor(Math.random() * condicoesTemplates.length);
+          } while (usadasSet.has(idx) && usadasSet.size < condicoesTemplates.length);
+          usadasSet.add(idx);
+          
+          const t = condicoesTemplates[idx];
+          condicoesGeradas.push({
+            id: Date.now() + i,
+            titulo: `Condição ${i + 1}`,
+            descricao: t.desc,
+            dificuldade: t.dificuldade,
+            janela: t.janela,
+            custo: t.custo,
+            risco: t.risco
+          });
+        }
+        
+        res.json({ condicoes: condicoesGeradas });
+        break;
+        
+      default:
+        res.json({ valor: "Gerado automaticamente" });
+    }
+    
+  } catch (error) {
+    console.error("Erro ao gerar campo:", error);
+    res.status(500).json({ error: "Erro ao gerar campo" });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
