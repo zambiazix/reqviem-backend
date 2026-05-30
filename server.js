@@ -19,7 +19,7 @@ import { PassThrough } from 'stream';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
-import serviceAccount from './serviceAccountKey.json' assert { type: 'json' };
+import serviceAccount from './serviceAccountKey.json' with { type: 'json' };
 
 // 🟢 ADICIONE APÓS OS IMPORTS
 // Inicializa Firebase Admin SDK
