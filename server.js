@@ -1088,53 +1088,58 @@ app.post("/api/gerar-campo-habilidade", async (req, res) => {
   }
 });
 
-// 🟢🟢🟢 ROTAS DE IA (HUGGING FACE - GRÁTIS) 🟢🟢🟢
-
-// 🟢 IA - Texto (Google Gemini - Grátis)
+// 🟢 IA - Texto (Google Gemini - com fallback de modelos)
 app.post('/api/ia-texto', async (req, res) => {
   const { mensagem } = req.body;
   
   try {
     const API_KEY = process.env.GEMINI_API_KEY;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
     
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: `Você é um assistente do RPG Réquiem. Responda de forma criativa e útil.\n\nJogador: ${mensagem}` }
+    const modelos = [
+      "gemini-3.6-flash",
+      "gemini-3-flash",
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-1.5-flash",
+      "gemini-pro",
+    ];
+    
+    let respostaFinal = null;
+    
+    for (const modelo of modelos) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${API_KEY}`;
+        
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              { parts: [{ text: `Você é um assistente do RPG Réquiem.\n\nJogador: ${mensagem}` }] }
             ]
-          }
-        ]
-      }),
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Gemini error:", errorData);
-      throw new Error(`HTTP ${response.status}`);
+          }),
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          respostaFinal = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (respostaFinal) break;
+        }
+      } catch (err) {
+        // Tenta próximo modelo
+      }
     }
     
-    const data = await response.json();
-    const resposta = data.candidates?.[0]?.content?.parts?.[0]?.text || "Não consegui gerar resposta.";
+    if (respostaFinal) {
+      res.json({ resposta: respostaFinal });
+    } else {
+      res.json({ resposta: "Não consegui gerar resposta. Verifique a API key." });
+    }
     
-    res.json({ resposta });
   } catch (error) {
     console.error("Erro IA texto:", error);
-    res.json({ resposta: "Erro ao gerar resposta. Tente novamente." });
+    res.json({ resposta: "Erro ao gerar resposta." });
   }
-});
-
-// 🟢 IA - Imagem (Pollinations - Grátis, sem API key)
-app.get('/api/ia-imagem', (req, res) => {
-  const { prompt } = req.query;
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512`;
-  res.json({ url });
 });
 
 // 🟢 IA - Imagem (Pollinations - Grátis)
