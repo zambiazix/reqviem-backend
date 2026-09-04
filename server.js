@@ -1096,7 +1096,7 @@ app.post('/api/ia-texto', async (req, res) => {
   
   try {
     const API_KEY = process.env.GEMINI_API_KEY;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
     
     const response = await fetch(url, {
       method: "POST",
