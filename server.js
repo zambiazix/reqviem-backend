@@ -1090,24 +1090,51 @@ app.post("/api/gerar-campo-habilidade", async (req, res) => {
 
 // 🟢🟢🟢 ROTAS DE IA (HUGGING FACE - GRÁTIS) 🟢🟢🟢
 
-// 🟢 IA - Texto (Pollinations - Grátis, sem API key)
+// 🟢 IA - Texto (Google Gemini - Grátis)
 app.post('/api/ia-texto', async (req, res) => {
   const { mensagem } = req.body;
   
   try {
-    const systemPrompt = encodeURIComponent("Você é um assistente do RPG Réquiem. Responda de forma criativa e útil.");
-    const userPrompt = encodeURIComponent(mensagem);
+    const API_KEY = process.env.GEMINI_API_KEY;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
     
-    const url = `https://text.pollinations.ai/${systemPrompt}%20${userPrompt}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: `Você é um assistente do RPG Réquiem. Responda de forma criativa e útil.\n\nJogador: ${mensagem}` }
+            ]
+          }
+        ]
+      }),
+    });
     
-    const response = await fetch(url);
-    const texto = await response.text();
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error("Gemini error:", errorData);
+      throw new Error(`HTTP ${response.status}`);
+    }
     
-    res.json({ resposta: texto || "Desculpe, não consegui gerar uma resposta." });
+    const data = await response.json();
+    const resposta = data.candidates?.[0]?.content?.parts?.[0]?.text || "Não consegui gerar resposta.";
+    
+    res.json({ resposta });
   } catch (error) {
     console.error("Erro IA texto:", error);
     res.json({ resposta: "Erro ao gerar resposta. Tente novamente." });
   }
+});
+
+// 🟢 IA - Imagem (Pollinations - Grátis, sem API key)
+app.get('/api/ia-imagem', (req, res) => {
+  const { prompt } = req.query;
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512`;
+  res.json({ url });
 });
 
 // 🟢 IA - Imagem (Pollinations - Grátis)
