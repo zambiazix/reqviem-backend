@@ -1090,25 +1090,20 @@ app.post("/api/gerar-campo-habilidade", async (req, res) => {
 
 // 🟢🟢🟢 ROTAS DE IA (HUGGING FACE - GRÁTIS) 🟢🟢🟢
 
-// 🟢 IA - Texto (Hugging Face - Grátis)
+// 🟢 IA - Texto (Pollinations - Grátis, sem API key)
 app.post('/api/ia-texto', async (req, res) => {
   const { mensagem } = req.body;
   
   try {
-    const response = await fetch(
-      "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium",
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ inputs: mensagem }),
-      }
-    );
+    const systemPrompt = encodeURIComponent("Você é um assistente do RPG Réquiem. Responda de forma criativa e útil.");
+    const userPrompt = encodeURIComponent(mensagem);
     
-    const data = await response.json();
-    res.json({ resposta: data.generated_text || data[0]?.generated_text || "Desculpe, não entendi." });
+    const url = `https://text.pollinations.ai/${systemPrompt}%20${userPrompt}`;
+    
+    const response = await fetch(url);
+    const texto = await response.text();
+    
+    res.json({ resposta: texto || "Desculpe, não consegui gerar uma resposta." });
   } catch (error) {
     console.error("Erro IA texto:", error);
     res.json({ resposta: "Erro ao gerar resposta. Tente novamente." });
