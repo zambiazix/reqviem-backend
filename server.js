@@ -1088,6 +1088,40 @@ app.post("/api/gerar-campo-habilidade", async (req, res) => {
   }
 });
 
+// 🟢🟢🟢 ROTAS DE IA (HUGGING FACE - GRÁTIS) 🟢🟢🟢
+
+// 🟢 IA - Texto (Hugging Face - Grátis)
+app.post('/api/ia-texto', async (req, res) => {
+  const { mensagem } = req.body;
+  
+  try {
+    const response = await fetch(
+      "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ inputs: mensagem }),
+      }
+    );
+    
+    const data = await response.json();
+    res.json({ resposta: data.generated_text || data[0]?.generated_text || "Desculpe, não entendi." });
+  } catch (error) {
+    console.error("Erro IA texto:", error);
+    res.json({ resposta: "Erro ao gerar resposta. Tente novamente." });
+  }
+});
+
+// 🟢 IA - Imagem (Pollinations - Grátis)
+app.get('/api/ia-imagem', (req, res) => {
+  const { prompt } = req.query;
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512`;
+  res.json({ url });
+});
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
