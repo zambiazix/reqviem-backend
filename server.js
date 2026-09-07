@@ -43,7 +43,8 @@ const server = http.createServer(app);
 const allowedOrigins = [
   "https://reqviem.vercel.app",
   "http://localhost:5173",
-  "http://localhost:3000"
+  "http://localhost:3000",
+  "https://requiem-rpg.web.app"
 ];
 
 app.use((req, res, next) => {
