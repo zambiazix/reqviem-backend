@@ -184,113 +184,58 @@ async function compressAudio(buffer, originalName) {
       .pipe(outputStream);
   });
 }
-
-// 🟢🟢🟢 AQUI! COLOQUE A ROTA /upload AGORA! 🟢🟢🟢
-// 🟢🟢🟢 AQUI! COLOQUE A ROTA /upload AGORA! 🟢🟢🟢
+// 🟢🟢🟢 ROTA /upload SIMPLIFICADA 🟢🟢🟢
 app.post("/upload", upload.single("file"), async (req, res) => {
-  console.log("=".repeat(50));
-  console.log("📤 NOVO UPLOAD RECEBIDO");
-  console.log("=".repeat(50));
+  console.log("📤 Upload recebido");
   
   try {
     if (!req.file) {
-      console.error("❌ NENHUM ARQUIVO RECEBIDO");
-      return res.status(400).json({ error: "Nenhum arquivo enviado" });
+      console.error("❌ Nenhum arquivo");
+      return res.status(400).json({ error: "Nenhum arquivo" });
     }
 
     const file = req.file;
-    console.log("📤 Arquivo recebido:", {
-      nome: file.originalname,
-      mime: file.mimetype,
-      tamanhoOriginal: (file.size / 1024 / 1024).toFixed(2) + 'MB'
+    console.log("📤 Arquivo:", file.originalname, file.mimetype, file.size);
+
+    // 🟢 USANDO APENAS CLOUDINARY PARA TUDO (MAIS SIMPLES)
+    const formData = new FormData();
+    formData.append("file", file.buffer, {
+      filename: file.originalname,
+      contentType: file.mimetype
     });
+    formData.append("upload_preset", "rpg_musicas");
+    formData.append("resource_type", "auto");
     
-    const isAudio = file.mimetype.startsWith('audio/');
+    console.log("📤 Enviando para Cloudinary...");
     
-    if (isAudio) {
-      let audioBuffer = file.buffer;
-      
-      // 🟢 COMPRIME SE FOR MAIOR QUE 5MB
-      if (file.size > 5 * 1024 * 1024) {
-        console.log('🎵 Arquivo > 5MB, comprimindo...');
-        try {
-          audioBuffer = await compressAudio(file.buffer, file.originalname);
-          console.log('✅ Compressão OK! Tamanho final:', (audioBuffer.length / 1024 / 1024).toFixed(2) + 'MB');
-        } catch (compressErr) {
-          console.error('❌ Erro na compressão, enviando original:', compressErr);
-          audioBuffer = file.buffer;
-        }
+    const resp = await axios.post(
+      "https://api.cloudinary.com/v1_1/dwaxw0l83/auto/upload",
+      formData,
+      { 
+        headers: formData.getHeaders(),
+        timeout: 60000
       }
-      
-      console.log('🎵 Enviando para Cloudinary...');
-      
-      const formData = new FormData();
-      formData.append("file", audioBuffer, {
-        filename: file.originalname.replace(/\.[^.]+$/, '.mp3'),
-        contentType: 'audio/mp3'
-      });
-      
-      // 🟢🟢🟢 ADICIONE ESTAS DUAS LINHAS! 🟢🟢🟢
-      formData.append("upload_preset", "rpg_musicas");
-      formData.append("resource_type", "auto");
-      
-      const resp = await axios.post(
-        "https://api.cloudinary.com/v1_1/dwaxw0l83/auto/upload",
-        formData,
-        { 
-          headers: formData.getHeaders(),
-          timeout: 60000
-        }
-      );
-      
-      const url = resp.data?.secure_url || resp.data?.url;
-      
-      if (url) {
-        console.log("✅✅✅ SUCESSO! URL:", url);
-        return res.json({ url });
-      } else {
-        throw new Error("Cloudinary não retornou URL");
-      }
-      
+    );
+    
+    const url = resp.data?.secure_url || resp.data?.url;
+    
+    if (url) {
+      console.log("✅ URL:", url);
+      return res.json({ url });
     } else {
-      // 🟢 IMAGEM
-      console.log('🖼️ Enviando imagem para ImgBB...');
-      
-      const IMGBB_KEY = process.env.IMGBB_API_KEY;
-      if (!IMGBB_KEY) {
-        throw new Error("IMGBB_API_KEY não configurada");
-      }
-      
-      const form = new FormData();
-      form.append("key", IMGBB_KEY);
-      form.append("image", file.buffer.toString("base64"));
-      
-      const resp = await axios.post("https://api.imgbb.com/1/upload", form, {
-        headers: form.getHeaders(),
-      });
-      
-      const url = resp.data?.data?.url;
-      if (url) {
-        console.log("✅ Upload ImgBB sucesso:", url);
-        res.json({ url });
-      } else {
-        throw new Error("ImgBB não retornou URL");
-      }
+      throw new Error("Cloudinary não retornou URL");
     }
-  } catch (err) {
-    console.error("=".repeat(50));
-    console.error("❌❌❌ ERRO NO UPLOAD ❌❌❌");
-    console.error("Mensagem:", err.message);
-    console.error("Dados do erro:", err.response?.data);
-    console.error("=".repeat(50));
     
+  } catch (err) {
+    console.error("❌ ERRO:", err.message);
+    console.error("❌ DETALHES:", err.response?.data || "Sem detalhes");
     res.status(500).json({ 
-      error: "Falha no upload",
-      message: err.message
+      error: "Upload falhou",
+      message: err.message,
+      details: err.response?.data || null
     });
   }
 });
-
 /* ===============================
    🎵 PASTA DE MÚSICAS
 ================================ */
