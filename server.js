@@ -1034,64 +1034,64 @@ app.post("/api/gerar-campo-habilidade", async (req, res) => {
   }
 });
 
-// 🟢 IA - Texto (Google Gemini - com fallback de modelos)
+// 🟢🟢🟢 IA - Texto (Pollinations - grátis, sem API key, sem limite) 🟢🟢🟢
 app.post('/api/ia-texto', async (req, res) => {
   const { mensagem } = req.body;
-  
+
+  if (!mensagem || typeof mensagem !== 'string') {
+    return res.status(400).json({ erro: "Mensagem inválida" });
+  }
+
   try {
-    const API_KEY = process.env.GEMINI_API_KEY;
-    
-    const modelos = [
-      "gemini-3.6-flash",
-      "gemini-3-flash",
-      "gemini-2.5-flash",
-      "gemini-2.0-flash",
-      "gemini-1.5-flash",
-      "gemini-pro",
-    ];
-    
-    let respostaFinal = null;
-    
-    for (const modelo of modelos) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${API_KEY}`;
-        
-        const response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [
-              { parts: [{ text: `Você é um assistente do RPG Réquiem.\n\nJogador: ${mensagem}` }] }
-            ]
-          }),
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          respostaFinal = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (respostaFinal) break;
-        }
-      } catch (err) {
-        // Tenta próximo modelo
-      }
+    // Contexto do RPG pra IA dar respostas melhores
+    const systemPrompt = `Você é o Assistente do Réquiem RPG, um mundo steampunk/cyberpunk com magia chamada Aura. 
+Seja útil, criativo e direto. Ajude com lore, personagens, itens, histórias e regras.
+Mundo: Império Aurano (Jax Doflamingo), Kratória, Arcádia, Farglacius, Parax, Varosia, etc.
+Categorias de Aura: Titã, Alquimista, Artesão, Fundador, Déspota, Ás.
+Responda em português brasileiro, de forma concisa e envolvente.
+
+Jogador: ${mensagem}`;
+
+    // Pollinations aceita texto direto na URL
+    const url = `https://text.pollinations.ai/${encodeURIComponent(systemPrompt)}?model=openai&private=true`;
+
+    console.log("🤖 Chamando Pollinations...");
+    const response = await axios.get(url, { timeout: 30000 });
+
+    const texto = typeof response.data === 'string'
+      ? response.data
+      : response.data?.resposta || JSON.stringify(response.data);
+
+    if (!texto || texto.trim().length === 0) {
+      throw new Error("Resposta vazia");
     }
-    
-    if (respostaFinal) {
-      res.json({ resposta: respostaFinal });
-    } else {
-      res.json({ resposta: "Não consegui gerar resposta. Verifique a API key." });
-    }
-    
+
+    console.log("✅ Resposta gerada:", texto.slice(0, 80) + "...");
+    res.json({ resposta: texto.trim() });
+
   } catch (error) {
-    console.error("Erro IA texto:", error);
-    res.json({ resposta: "Erro ao gerar resposta." });
+    console.error("❌ Erro IA texto:", error.message);
+    console.error("Detalhes:", error.response?.data || "sem detalhes");
+    res.status(500).json({
+      erro: "Erro ao gerar resposta",
+      message: error.message
+    });
   }
 });
 
-// 🟢 IA - Imagem (Pollinations - Grátis)
+// 🟢🟢🟢 IA - Imagem (Pollinations com modelos melhores) 🟢🟢🟢
 app.get('/api/ia-imagem', (req, res) => {
-  const { prompt } = req.query;
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512`;
+  const { prompt, modelo = 'flux' } = req.query;
+
+  if (!prompt) {
+    return res.status(400).json({ erro: "Prompt obrigatório" });
+  }
+
+  // Estilo arte digital / fantasia pra combinar com o RPG
+  const promptFinal = `${prompt}, digital art, fantasy, cinematic lighting, highly detailed, 4k`;
+
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptFinal)}?width=768&height=768&model=${modelo}&nologo=true&enhance=true`;
+
   res.json({ url });
 });
 
