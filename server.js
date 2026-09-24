@@ -10,19 +10,15 @@ import FormData from "form-data";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { AccessToken } from "livekit-server-sdk";
-// 🟢 ADICIONE ESTAS LINHAS NO TOPO (junto com os outros imports)
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
 import { PassThrough } from 'stream';
-// 🟢 ADICIONE ESTES IMPORTS NO TOPO DO ARQUIVO
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
-// 🟢 ADICIONE APÓS OS IMPORTS
-// Inicializa Firebase Admin SDK
 initializeApp({
   credential: cert(serviceAccount),
 });
@@ -30,7 +26,6 @@ initializeApp({
 const adminAuth = getAuth();
 const adminDb = getFirestore();
 
-// 🟢 Configurar caminhos do ffmpeg (logo após os imports)
 ffmpeg.setFfmpegPath(ffmpegStatic);
 ffmpeg.setFfprobePath(ffprobeStatic.path);
 
@@ -75,17 +70,12 @@ const io = new Server(server, {
   }
 });
 
-/* ===============================
-   📤 CONFIGURAÇÃO UPLOAD
-================================ */
-
 const uploadsDir = path.join(process.cwd(), "uploads_tmp");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// 🟢 FUNÇÃO PARA UPLOAD DE IMAGEM (IMGBB)
 async function uploadToImgBB(file) {
   const IMGBB_KEY = process.env.IMGBB_API_KEY;
   if (!IMGBB_KEY) throw new Error("IMGBB_API_KEY não configurada");
@@ -101,7 +91,6 @@ async function uploadToImgBB(file) {
   return resp.data?.data?.url;
 }
 
-// 🟢 FUNÇÃO PARA UPLOAD DE ÁUDIO (CLOUDINARY)
 async function uploadToCloudinary(file) {
   try {
     console.log('📤 Iniciando upload para Cloudinary...');
@@ -155,7 +144,6 @@ async function uploadToCloudinary(file) {
   }
 }
 
-// 🟢 FUNÇÃO PARA COMPRIMIR ÁUDIO (DEIXE APENAS UMA!)
 async function compressAudio(buffer, originalName) {
   return new Promise((resolve, reject) => {
     const inputStream = new PassThrough();
@@ -184,7 +172,7 @@ async function compressAudio(buffer, originalName) {
       .pipe(outputStream);
   });
 }
-// 🟢🟢🟢 ROTA /upload SIMPLIFICADA 🟢🟢🟢
+
 app.post("/upload", upload.single("file"), async (req, res) => {
   console.log("📤 Upload recebido");
   
@@ -197,7 +185,6 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     const file = req.file;
     console.log("📤 Arquivo:", file.originalname, file.mimetype, file.size);
 
-    // 🟢 USANDO APENAS CLOUDINARY PARA TUDO (MAIS SIMPLES)
     const formData = new FormData();
     formData.append("file", file.buffer, {
       filename: file.originalname,
@@ -236,9 +223,6 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     });
   }
 });
-/* ===============================
-   🎵 PASTA DE MÚSICAS
-================================ */
 
 const musicDir = path.join(__dirname, "musicas");
 if (!fs.existsSync(musicDir)) fs.mkdirSync(musicDir);
@@ -250,10 +234,6 @@ app.use("/musicas", (req, res, next) => {
 });
 
 app.use("/musicas", express.static(musicDir));
-
-/* ===============================
-   🎤 LIVEKIT TOKEN (CORRIGIDO)
-================================ */
 
 app.post("/livekit/token", async (req, res) => {
   try {
@@ -293,10 +273,6 @@ app.post("/livekit/token", async (req, res) => {
   }
 });
 
-/* ===============================
-   🔊 SOCKET.IO (MÚSICA + GRID)
-================================ */
-
 let tokens = [];
 
 io.on("connection", (socket) => {
@@ -327,34 +303,28 @@ io.on("connection", (socket) => {
   });
 
   socket.on("play-music", (url) => {
-  console.log('🎵 Play recebido:', url);
-  // Envia a URL para TODOS os outros clientes
-  socket.broadcast.emit("play-music", url);
-});
+    console.log('🎵 Play recebido:', url);
+    socket.broadcast.emit("play-music", url);
+  });
 
-socket.on("stop-music", (url) => {
-  console.log('🎵 Stop recebido:', url);
-  // Envia a URL para TODOS os outros clientes
-  socket.broadcast.emit("stop-music", url);
-});
+  socket.on("stop-music", (url) => {
+    console.log('🎵 Stop recebido:', url);
+    socket.broadcast.emit("stop-music", url);
+  });
 
-socket.on("stop-all-music", () => {
-  console.log('🎵 Stop ALL recebido');
-  socket.broadcast.emit("stop-all-music");
-});
+  socket.on("stop-all-music", () => {
+    console.log('🎵 Stop ALL recebido');
+    socket.broadcast.emit("stop-all-music");
+  });
 
-socket.on("volume-music", (data) => {
-  socket.broadcast.emit("volume-music", data);
-});
+  socket.on("volume-music", (data) => {
+    socket.broadcast.emit("volume-music", data);
+  });
 
   socket.on("disconnect", () => {
     console.log("🔴 Desconectado:", socket.id);
   });
 });
-
-/* ===============================
-   🎞️ GIF SEARCH (GIPHY + REDGIFS)
-================================ */
 
 let redgifsToken = null;
 let redgifsTokenExpire = 0;
@@ -436,12 +406,10 @@ app.get("/api/giphy/search", async (req, res) => {
   }
 });
 
-// 🟢🟢🟢 ROTA PARA DELETAR CONTA (APENAS MESTRE) 🟢🟢🟢
 app.post("/api/admin/delete-user", async (req, res) => {
   try {
     const { email, mestreEmail } = req.body;
     
-    // Verifica se quem está fazendo a requisição é o mestre
     const MASTER_EMAIL = "mestre@reqviemrpg.com";
     
     if (mestreEmail !== MASTER_EMAIL) {
@@ -456,7 +424,6 @@ app.post("/api/admin/delete-user", async (req, res) => {
       });
     }
     
-    // Não permite deletar a conta do próprio mestre
     if (email === MASTER_EMAIL) {
       return res.status(403).json({ 
         error: "Não é possível deletar a conta do mestre" 
@@ -466,11 +433,9 @@ app.post("/api/admin/delete-user", async (req, res) => {
     console.log(`🗑️ Tentando deletar conta: ${email}`);
     
     try {
-      // 1. Buscar o usuário pelo email no Firebase Auth
       const userRecord = await adminAuth.getUserByEmail(email);
       const uid = userRecord.uid;
       
-      // 2. Deletar o documento da ficha no Firestore
       try {
         await adminDb.collection('fichas').doc(email).delete();
         console.log(`📄 Ficha de ${email} deletada`);
@@ -478,7 +443,6 @@ app.post("/api/admin/delete-user", async (req, res) => {
         console.log(`⚠️ Ficha de ${email} não encontrada ou já deletada`);
       }
       
-      // 3. Deletar o usuário do Firebase Auth
       await adminAuth.deleteUser(uid);
       console.log(`👤 Usuário ${email} deletado do Firebase Auth`);
       
@@ -488,9 +452,7 @@ app.post("/api/admin/delete-user", async (req, res) => {
       });
       
     } catch (authErr) {
-      // Se o usuário não existir no Auth, mas a ficha existir
       if (authErr.code === 'auth/user-not-found') {
-        // Tenta deletar apenas a ficha
         try {
           await adminDb.collection('fichas').doc(email).delete();
           console.log(`📄 Ficha de ${email} deletada (usuário não existia no Auth)`);
@@ -518,7 +480,6 @@ app.post("/api/admin/delete-user", async (req, res) => {
   }
 });
 
-// 🟢 ROTA PARA LISTAR TODAS AS CONTAS (APENAS MESTRE)
 app.post("/api/admin/list-users", async (req, res) => {
   try {
     const { mestreEmail } = req.body;
@@ -550,7 +511,69 @@ app.post("/api/admin/list-users", async (req, res) => {
   }
 });
 
-// 🟢 ROTA DE AVALIAÇÃO DE HABILIDADES (IA) - VERSÃO CORRIGIDA E RIGOROSA
+// 🟢🟢🟢 ALTERAR SENHA (apenas Mestre) 🟢🟢🟢
+app.post("/api/admin/update-password", async (req, res) => {
+  const { email, novaSenha, mestreEmail } = req.body;
+  const MASTER_EMAIL = "mestre@reqviemrpg.com";
+
+  if (mestreEmail !== MASTER_EMAIL) {
+    return res.status(403).json({ error: "Apenas o Mestre pode alterar senhas." });
+  }
+
+  if (!email || !novaSenha || novaSenha.length < 6) {
+    return res.status(400).json({ error: "Senha precisa ter pelo menos 6 caracteres." });
+  }
+
+  try {
+    const user = await adminAuth.getUserByEmail(email);
+    await adminAuth.updateUser(user.uid, { password: novaSenha });
+
+    await adminDb.collection('contas_usuarios').doc(email).set({
+      senha: novaSenha,
+      atualizadoEm: new Date().toISOString(),
+    }, { merge: true });
+
+    console.log(`🔐 Senha de ${email} alterada com sucesso`);
+    res.json({ success: true, message: "Senha alterada com sucesso." });
+  } catch (err) {
+    console.error("❌ Erro ao alterar senha:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🟢🟢🟢 RECUPERAR SENHA (usuário esqueceu) 🟢🟢🟢
+app.post("/api/auth/recover-password", async (req, res) => {
+  const { username } = req.body;
+
+  if (!username) {
+    return res.status(400).json({ error: "Informe seu usuário." });
+  }
+
+  const emailCompleto = username.includes('@') ? username : `${username}@reqviemrpg.com`;
+
+  try {
+    const docRef = adminDb.collection('contas_usuarios').doc(emailCompleto);
+    const snap = await docRef.get();
+
+    if (!snap.exists) {
+      return res.status(404).json({ error: "Usuário não encontrado." });
+    }
+
+    const dados = snap.data();
+
+    console.log(`🔑 Senha recuperada para ${emailCompleto}`);
+    res.json({
+      success: true,
+      username: dados.nomeConvidado || emailCompleto.split('@')[0],
+      senha: dados.senha,
+      isConvidado: dados.isConvidado || false,
+    });
+  } catch (err) {
+    console.error("❌ Erro ao recuperar senha:", err);
+    res.status(500).json({ error: "Erro ao recuperar senha." });
+  }
+});
+
 app.post("/api/avaliar-habilidade", async (req, res) => {
   try {
     const { nome, descricao, dado, tipoDano, custoPE, condicoes } = req.body;
@@ -558,35 +581,23 @@ app.post("/api/avaliar-habilidade", async (req, res) => {
     const descLower = (descricao || "").toLowerCase();
     const nomeLower = (nome || "").toLowerCase();
     
-    // =============================================
-    // 🟢 ANÁLISE DE PODER BASE (0 a 10)
-    // =============================================
     let poderBase = 0;
     
-    // --- PESO DO DADO (1-10) ---
     poderBase += (Number(dado) || 1) * 0.5;
     
-    // --- TIPO DE DANO ---
     const danosFortes = ["Aurano", "Psíquico", "Tóxico", "Térmico"];
     if (danosFortes.includes(tipoDano)) poderBase += 1.5;
     
-    // --- CUSTO DE PE (custo alto reduz poder) ---
     poderBase -= (Number(custoPE) || 0) * 0.15;
     
-    // =============================================
-    // 🟢 ANÁLISE SEMÂNTICA DA DESCRIÇÃO (MUITO MAIS RIGOROSA)
-    // =============================================
-    
-    // 🔴 PALAVRAS DE PODER ABSOLUTO (muito overpower)
     if (descLower.includes("mata instantaneamente") || 
         descLower.includes("morte instantânea") ||
         descLower.includes("mata qualquer") ||
         descLower.includes("matar tudo") ||
         descLower.includes("todos os inimigos") && descLower.includes("mata")) {
-      poderBase += 8; // Extremamente overpower
+      poderBase += 8;
     }
     
-    // 🔴 PALAVRAS DE MORTE GARANTIDA
     if (descLower.includes("morte certa") || 
         descLower.includes("mata na hora") ||
         descLower.includes("sem chance de defesa") ||
@@ -594,13 +605,11 @@ app.post("/api/avaliar-habilidade", async (req, res) => {
       poderBase += 7;
     }
     
-    // 🔴 DANO EM ÁREA MASSIVO
     if ((descLower.includes("todos") || descLower.includes("todos os inimigos")) && 
         (descLower.includes("dano") || descLower.includes("mata") || descLower.includes("destrói"))) {
       poderBase += 5;
     }
     
-    // 🔴 INVENCIBILIDADE
     if (descLower.includes("invencível") || 
         descLower.includes("imune a tudo") ||
         descLower.includes("nada pode") && descLower.includes("atingir") ||
@@ -608,7 +617,6 @@ app.post("/api/avaliar-habilidade", async (req, res) => {
       poderBase += 6;
     }
     
-    // 🟠 PODERES MUITO FORTES
     if (descLower.includes("controla") && descLower.includes("mente")) poderBase += 4;
     if (descLower.includes("controla") && descLower.includes("tempo")) poderBase += 5;
     if (descLower.includes("controla") && descLower.includes("realidade")) poderBase += 6;
@@ -618,24 +626,18 @@ app.post("/api/avaliar-habilidade", async (req, res) => {
     if (descLower.includes("ressuscita")) poderBase += 5;
     if (descLower.includes("paralisa")) poderBase += 2;
     
-    // 🟡 DANO MODERADO
     if (descLower.includes("dano massivo") || descLower.includes("dano devastador")) poderBase += 4;
     if (descLower.includes("dano alto") || descLower.includes("dano grande")) poderBase += 3;
     if (descLower.includes("explosão")) poderBase += 2;
     if (descLower.includes("corte profundo")) poderBase += 2;
     
-    // 🟢 DEFESAS
     if (descLower.includes("escudo") || descLower.includes("defesa")) poderBase += 1;
     if (descLower.includes("barreira")) poderBase += 1.5;
     
-    // 🔴 ANÁLISE DO NOME (nomes muito sugestivos)
     if (nomeLower.includes("morte") || nomeLower.includes("destruição")) poderBase += 3;
     if (nomeLower.includes("juízo final") || nomeLower.includes("apocalipse")) poderBase += 5;
     if (nomeLower.includes("deus") || nomeLower.includes("divino")) poderBase += 4;
     
-    // =============================================
-    // 🟢 NÍVEL DE RESTRIÇÃO (0 a 10)
-    // =============================================
     let nivelRestricao = 0;
     
     const condicoesAnalisadas = (condicoes || []).map(cond => {
@@ -645,58 +647,39 @@ app.post("/api/avaliar-habilidade", async (req, res) => {
       let custo = cond.custo || 0;
       let risco = cond.risco || 0;
       
-      // Só analisa se não foi avaliado manualmente
       if (dificuldade === 0 && janela === 0 && custo === 0 && risco === 0) {
-        // Dificuldade
         if (descCond.includes("50 pulos") || descCond.includes("100 flexões") || 
             descCond.includes("correr 10km") || descCond.includes("1 hora")) dificuldade = 4;
         else if (descCond.includes("concentração") || descCond.includes("meditar")) dificuldade = 2;
         else if (descCond.includes("gritar") || descCond.includes("falar")) dificuldade = 1;
         
-        // Janela
         if (descCond.includes("eclipse") || descCond.includes("lua cheia") || 
             descCond.includes("alinhamento")) janela = 5;
         else if (descCond.includes("noite") || descCond.includes("escuridão")) janela = 3;
         else if (descCond.includes("dia") || descCond.includes("manhã")) janela = 2;
         else if (descCond.includes("uma vez por") || descCond.includes("1 vez por")) janela = 4;
         
-        // Custo
         if (descCond.includes("vida") || descCond.includes("sangue") || 
             descCond.includes("morte") || descCond.includes("alma")) custo = 5;
         else if (descCond.includes("energia") || descCond.includes("cansaço")) custo = 3;
         else if (descCond.includes("pe") || descCond.includes("aura")) custo = 2;
         
-        // Risco
         if (descCond.includes("chance de morrer") || descCond.includes("morte certa")) risco = 5;
         else if (descCond.includes("pode falhar") || descCond.includes("chance de")) risco = 3;
         else if (descCond.includes("dano colateral") || descCond.includes("aliados")) risco = 2;
       }
       
-      // Peso da condição individual
       const pesoCond = (dificuldade * 0.3) + (janela * 0.5) + (custo * 0.4) + (risco * 0.6);
       nivelRestricao += pesoCond;
       
       return { ...cond, dificuldade, janela, custo, risco };
     });
     
-    // =============================================
-    // 🟢 CÁLCULO DE BALANCEAMENTO
-    // =============================================
-    
-    // Fator de restrição: 0 restrições = fator 1.0 (sem redução)
-    // Muitas restrições = fator 0.2 (80% de redução)
     const fatorRestricao = Math.max(0.15, 1 - (nivelRestricao / 8));
-    
-    // Poder efetivo = poder base × fator de restrição
     const poderEfetivo = poderBase * fatorRestricao;
-    
-    // Limite máximo permitido (ajustável)
     const limiteMaximo = 3;
     const percentual = Math.min((poderEfetivo / limiteMaximo) * 100, 200);
     
-    // =============================================
-    // 🟢 CLASSIFICAÇÃO
-    // =============================================
     let status, mensagem, sugestoes = [];
     
     if (nivelRestricao === 0 && poderBase > 5) {
@@ -758,7 +741,7 @@ app.post("/api/avaliar-habilidade", async (req, res) => {
     res.status(500).json({ error: "Erro ao avaliar habilidade" });
   }
 });
-// 🟢 ROTA PARA SALVAR AVALIAÇÕES DO MESTRE (TREINAMENTO) - CORRIGIDA
+
 app.post("/api/salvar-avaliacao", async (req, res) => {
   try {
     const { fichaId, habilidade, avaliacaoMestre, timestamp, mestreEmail } = req.body;
@@ -769,7 +752,6 @@ app.post("/api/salvar-avaliacao", async (req, res) => {
       mestre: mestreEmail
     });
     
-    // 🟢 CORRIGIDO: Usa doc() com ID automático e set() para garantir criação
     const docRef = adminDb.collection('treinamentoIA').doc();
     await docRef.set({
       fichaId: fichaId || "",
@@ -797,7 +779,6 @@ app.post("/api/salvar-avaliacao", async (req, res) => {
   }
 });
 
-// 🟢 ROTA PARA CONSULTAR AVALIAÇÕES SALVAS (APENAS MESTRE) - CORRIGIDA
 app.post("/api/consultar-avaliacoes", async (req, res) => {
   try {
     const { mestreEmail } = req.body;
@@ -807,7 +788,6 @@ app.post("/api/consultar-avaliacoes", async (req, res) => {
       return res.status(403).json({ error: "Apenas o mestre pode consultar" });
     }
     
-    // 🟢 CORRIGIDO: Verifica se a coleção existe antes de consultar
     const snapshot = await adminDb.collection('treinamentoIA')
       .orderBy('createdAt', 'desc')
       .limit(50)
@@ -840,9 +820,6 @@ app.post("/api/consultar-avaliacoes", async (req, res) => {
   }
 });
 
-// 🟢🟢🟢 ROTAS DE GERAÇÃO DE HABILIDADES (IA) 🟢🟢🟢
-
-// Listas para geração aleatória
 const NOMES_HABILIDADES = [
   "Punho do Dragão Celestial", "Lâmina das Sombras Eternas", "Barreira do Sol Nascente",
   "Garra do Trovão", "Sopro do Fênix", "Corrente do Abismo", "Escudo da Lua Sangrenta",
@@ -879,13 +856,12 @@ function gerarHabilidadeAleatoria(tipoAura = "Desconhecido") {
     .replace("{sacrificio}", ["parte de sua própria vida", "sua energia por um dia", "a visão de um olho", "memórias preciosas"][Math.floor(Math.random() * 4)])
     .replace("{criacao}", ["um golem de aura", "uma esfera de energia pura", "um campo de força", "lâminas espectrais"][Math.floor(Math.random() * 4)]);
   
-  const dado = Math.floor(Math.random() * 8) + 2; // 2 a 9
-  const custoPE = Math.floor(Math.random() * 15) + 3; // 3 a 17
+  const dado = Math.floor(Math.random() * 8) + 2;
+  const custoPE = Math.floor(Math.random() * 15) + 3;
   
   const tiposDano = ["Aurano", "Térmico", "Elétrico", "Gélido", "Psíquico", "Cortante", "Contundente", "Perfurante"];
   const tipoDano = tiposDano[Math.floor(Math.random() * tiposDano.length)];
   
-  // Gerar 1-3 condições aleatórias
   const numCondicoes = Math.floor(Math.random() * 3) + 1;
   const condicoesTemplates = [
     { desc: "Precisa recitar um encantamento de 10 segundos", dificuldade: 2, janela: 1, custo: 1, risco: 1 },
@@ -924,13 +900,11 @@ function gerarHabilidadeAleatoria(tipoAura = "Desconhecido") {
   return { nome, descricao, dado, custoPE, tipoDano, condicoes };
 }
 
-// 🟢 ROTA PARA GERAR HABILIDADE COMPLETA
 app.post("/api/gerar-habilidade", async (req, res) => {
   try {
     const { tipoAura } = req.body;
     const habilidade = gerarHabilidadeAleatoria(tipoAura);
     
-    // Pequeno atraso para simular processamento
     await new Promise(resolve => setTimeout(resolve, 800));
     
     res.json(habilidade);
@@ -940,7 +914,6 @@ app.post("/api/gerar-habilidade", async (req, res) => {
   }
 });
 
-// 🟢 ROTA PARA GERAR CAMPO ESPECÍFICO
 app.post("/api/gerar-campo-habilidade", async (req, res) => {
   try {
     const { campo, habilidadeAtual, tipoAura } = req.body;
@@ -1034,7 +1007,6 @@ app.post("/api/gerar-campo-habilidade", async (req, res) => {
   }
 });
 
-// 🟢🟢🟢 IA - Texto (Pollinations - grátis, sem API key, sem limite) 🟢🟢🟢
 app.post('/api/ia-texto', async (req, res) => {
   const { mensagem } = req.body;
 
@@ -1043,7 +1015,6 @@ app.post('/api/ia-texto', async (req, res) => {
   }
 
   try {
-    // Contexto do RPG pra IA dar respostas melhores
     const systemPrompt = `Você é o Assistente do Réquiem RPG, um mundo steampunk/cyberpunk com magia chamada Aura. 
 Seja útil, criativo e direto. Ajude com lore, personagens, itens, histórias e regras.
 Mundo: Império Aurano (Jax Doflamingo), Kratória, Arcádia, Farglacius, Parax, Varosia, etc.
@@ -1052,7 +1023,6 @@ Responda em português brasileiro, de forma concisa e envolvente.
 
 Jogador: ${mensagem}`;
 
-    // Pollinations aceita texto direto na URL
     const url = `https://text.pollinations.ai/${encodeURIComponent(systemPrompt)}?model=openai&private=true`;
 
     console.log("🤖 Chamando Pollinations...");
@@ -1079,7 +1049,6 @@ Jogador: ${mensagem}`;
   }
 });
 
-// 🟢🟢🟢 IA - Imagem (Pollinations com modelos melhores) 🟢🟢🟢
 app.get('/api/ia-imagem', (req, res) => {
   const { prompt, modelo = 'flux' } = req.query;
 
@@ -1087,7 +1056,6 @@ app.get('/api/ia-imagem', (req, res) => {
     return res.status(400).json({ erro: "Prompt obrigatório" });
   }
 
-  // Estilo arte digital / fantasia pra combinar com o RPG
   const promptFinal = `${prompt}, digital art, fantasy, cinematic lighting, highly detailed, 4k`;
 
   const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptFinal)}?width=768&height=768&model=${modelo}&nologo=true&enhance=true`;
