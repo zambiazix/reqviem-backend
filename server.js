@@ -1062,6 +1062,72 @@ app.get('/api/ia-imagem', (req, res) => {
 
   res.json({ url });
 });
+app.post('/api/ia-simular', async (req, res) => {
+  const { texto, contexto } = req.body;
+
+  if (!texto || typeof texto !== 'string') {
+    return res.status(400).json({ erro: "Texto obrigatório" });
+  }
+
+  const ctxResumo = contexto
+    ? `
+PAÍSES: ${(contexto.paises || []).map(p => `${p.id} (${p.nome})`).join(', ')}
+CIDADES: ${(contexto.cidades || []).slice(0, 60).map(c => `${c.id} (${c.nome})`).join(', ')}
+COMMODITIES: ${(contexto.commodities || []).map(c => c.id).join(', ')}
+IGS: ${(contexto.igs || []).slice(0, 80).map(i => `${i.id} (${i.nome})`).join(', ')}
+`
+    : "";
+
+  const systemPrompt = `Você é o Mestre Auxiliar do Simulador do Mundo de Réquiem RPG (steampunk/cyberpunk com Aura). Recebe uma narração em português e devolve efeitos numéricos em JSON.
+
+CONTEXTO DISPONÍVEL:
+${ctxResumo}
+
+NARRAÇÃO DO MESTRE:
+"${texto}"
+
+Responda APENAS com JSON puro, sem markdown, sem crases, sem texto antes ou depois:
+
+{
+  "titulo": "Título curto em pt-BR",
+  "noticia": "Texto jornalístico curto em pt-BR (1-2 frases)",
+  "efeitos": {
+    "cidadeId": "id_da_cidade_ou_vazio",
+    "paisId": "id_do_pais_ou_vazio",
+    "camposCidade": { "prosperidade": -10, "radicalizacao": 15, "lealdade": -5, "criminalidade": 5 },
+    "camposPais": { "cofre": -1000 },
+    "pops": { "operarios": { "lealdade": -15, "radicalizacao": 20 } },
+    "igs": [ { "id": "id_do_ig", "poder": -5, "humor": -10 } ],
+    "commodities": [ { "id": "id_commodity", "oferta": -200, "demanda": 50 } ]
+  }
+}
+
+Regras:
+- Use APENAS ids que existam no contexto acima.
+- Valores de campos de cidade entre -50 e +50.
+- pops válidos: operarios, camponeses, mercadores, clero, militares, nobres.
+- Se algo não se aplica, use 0 ou omita.
+- Nunca invente campos.`;
+
+  try {
+    const url = `https://text.pollinations.ai/${encodeURIComponent(systemPrompt)}?model=openai&private=true`;
+    console.log("🤖 IA Simulador: chamando Pollinations...");
+    const response = await axios.get(url, { timeout: 30000 });
+    const raw = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("IA não devolveu JSON válido");
+    }
+    const json = JSON.parse(jsonMatch[0]);
+
+    console.log("✅ IA Simulador:", json.titulo);
+    res.json(json);
+  } catch (error) {
+    console.error("❌ Erro IA Simulador:", error.message);
+    res.status(500).json({ erro: "Erro ao gerar simulação", message: error.message });
+  }
+});
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
