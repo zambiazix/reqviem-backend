@@ -1129,6 +1129,174 @@ Regras:
   }
 });
 
+app.post('/api/ia-equilibrio', async (req, res) => {
+  const { entidade, nivel, deficits, cofre, pops, edificiosDisponiveis } = req.body;
+  if (!deficits || deficits.length === 0) {
+    return res.json({ acoes: [], motivo: "Sem déficits." });
+  }
+
+  const listaDeficits = deficits.map(d => `${d.commodityId} (falta ${Math.abs(d.saldo)}/tick)`).join(", ");
+  const listaEdif = (edificiosDisponiveis || []).slice(0, 20).map(e => `${e.id}: ${e.nome} (custo base ${e.baseCusto}, produz ${e.commodityId})`).join("\n");
+
+  const systemPrompt = `Você é o Conselheiro Econômico de ${entidade} (nível ${nivel}). Sua função é decidir como resolver déficits crônicos de commodities.
+
+DÉFICITS ATUAIS: ${listaDeficits}
+COFRE DISPONÍVEL: ${cofre}
+POPS: ${JSON.stringify(pops || {}).slice(0, 300)}
+
+EDIFÍCIOS QUE PODEM SER CONSTRUÍDOS:
+${listaEdif}
+
+Responda APENAS com JSON puro, sem markdown, sem crases, sem texto antes ou depois:
+{
+  "acoes": [
+    { "tipo": "construir", "edificioId": "id_do_edificio", "motivo": "curto" },
+    { "tipo": "aumentar_imposto", "valor": 5, "motivo": "curto" }
+  ],
+  "aviso": "Mensagem curta explicando a decisão (1 frase)"
+}
+
+Regras:
+- Se tem cofre suficiente para o edifício que produz o déficit, use "construir".
+- Se não tem cofre, use "aumentar_imposto" (máximo +10).
+- Máximo 2 ações.
+- IDs de edifício DEVEM existir na lista acima.
+- Use pt-BR.`;
+
+  try {
+    const url = `https://text.pollinations.ai/${encodeURIComponent(systemPrompt)}?model=openai&private=true`;
+    const response = await axios.get(url, { timeout: 30000 });
+    const raw = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("IA não devolveu JSON");
+    const json = JSON.parse(jsonMatch[0]);
+    res.json(json);
+  } catch (err) {
+    console.error("❌ IA Equilíbrio:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+app.post('/api/ia-negociacao', async (req, res) => {
+  const { negociacao, contextoAlvo, contextoProponente } = req.body;
+  if (!negociacao || !contextoAlvo) {
+    return res.status(400).json({ erro: "Dados incompletos" });
+  }
+
+  const systemPrompt = `Você é o conselheiro político do(a) ${contextoAlvo.nome} (${contextoAlvo.nivel}). Você decide sobre propostas diplomáticas.
+
+═══ SUA NAÇÃO ═══
+Nome: ${contextoAlvo.nome}
+Governo: ${contextoAlvo.formaGoverno || "—"}
+Cofre: ${contextoAlvo.cofre || 0}
+População: ${(contextoAlvo.popTotal || 0).toLocaleString("pt-BR")}
+Instrução: ${contextoAlvo.instrucao || 0}%
+Reputação: ${contextoAlvo.reputacao || 50}
+Leis-chave: ${JSON.stringify(contextoAlvo.leisChave || {})}
+IGs (poder/humor): ${(contextoAlvo.igs || []).map(i => `${i.nome} (${i.poder}/${i.humor})`).join(", ")}
+Estoque-chave: ${JSON.stringify(contextoAlvo.estoque || {}).slice(0, 400)}
+
+═══ QUEM PROPÔS ═══
+Nome: ${contextoProponente?.nome || "—"}
+Cofre: ${contextoProponente?.cofre || 0}
+Relação: ${contextoAlvo.relacaoComProponente || "neutra"}
+
+═══ PROPOSTA ═══
+Tipo: ${negociacao.tipo}
+Título: ${negociacao.titulo}
+Descrição: ${negociacao.descricao || "—"}
+Oferta: ${JSON.stringify(negociacao.oferta)}
+Pedido: ${JSON.stringify(negociacao.pedido)}
+Chance-base calculada: ${negociacao.chanceSucesso}%
+Imposto aplicado: ${negociacao.impostoAlvo || 0}%
+
+═══ COMO DECIDIR ═══
+- Se a oferta tem MAIS valor que o pedido: aceite.
+- Se a oferta tem valor similar: considere o contexto (humor dos IGs, leis, cofre).
+- Se a oferta tem MENOS valor que o pedido: recuse OU faça contraproposta mais favorável a você.
+- Se o pedido compromete seu estoque crítico (>70% de qualquer commodity): recuse ou contraproponha.
+- Se é corrupção, avalie o impacto na reputação.
+- Chance-base alta (>70%) → tendência a aceitar.
+- Chance-base baixa (<30%) → tendência a recusar.
+
+Responda APENAS com JSON puro, sem markdown, sem crases:
+{
+  "decisao": "aceita" | "recusa" | "contraproposta",
+  "justificativa": "1-2 frases em pt-BR explicando a decisão",
+  "contraproposta": {
+    "titulo": "título curto",
+    "descricao": "descrição",
+    "oferta": { "dinheiro": 0, "commodity": null, "poderIG": null },
+    "pedido": { "dinheiro": 0, "commodity": null, "poderIG": null }
+  }
+}
+
+Se decisão for "aceita" ou "recusa", omita o campo "contraproposta".`;
+
+  try {
+    const url = `https://text.pollinations.ai/${encodeURIComponent(systemPrompt)}?model=openai&private=true`;
+    const response = await axios.get(url, { timeout: 30000 });
+    const raw = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("IA não devolveu JSON");
+    const json = JSON.parse(jsonMatch[0]);
+    res.json(json);
+  } catch (err) {
+    console.error("❌ IA Negociação:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+app.post("/api/ia-impostos", async (req, res) => {
+  try {
+    const { cidade, pop, pops, prosperidade, radicalizacao, lealdade, criminalidade, cofre, impostosAtuais } = req.body;
+
+    const popClasse = { pobre: 0, medio: 0, rico: 0 };
+    for (const [tipo, p] of Object.entries(pops || {})) {
+      const classe = p.classe || (tipo === "nobres" ? "rico" : (tipo === "operarios" || tipo === "camponeses") ? "pobre" : "medio");
+      popClasse[classe] += Number(p.tamanho) || 0;
+    }
+
+    const prompt = `Você é o Ministro da Fazenda de uma cidade steampunk chamada "${cidade}" no ano 879 D.C.
+Contexto socioeconômico:
+- População total: ${pop} (pobres: ${popClasse.pobre}, classe média: ${popClasse.medio}, ricos: ${popClasse.rico})
+- Prosperidade: ${prosperidade}/100
+- Radicalização: ${radicalizacao}/100 (acima de 65 = risco de revolta)
+- Lealdade: ${lealdade}/100
+- Criminalidade: ${criminalidade}/100
+- Cofre da cidade: ${cofre}
+- Impostos atuais (%): residencial=${JSON.stringify(impostosAtuais?.residencial || {})}, comercial=${JSON.stringify(impostosAtuais?.comercial || {})}, industrial=${JSON.stringify(impostosAtuais?.industrial || {})}
+
+Decida se deve MANTER, AUMENTAR ou BAIXAR os impostos. Regras:
+- Radicalização alta (>65) = baixar impostos pra acalmar
+- Cofre muito baixo (<500) = subir impostos (aceitar risco)
+- Prosperidade alta + cofre cheio = pode subir um pouco
+- Nunca deixe nenhum imposto abaixo de 0 ou acima de 50
+
+Responda APENAS JSON neste formato exato:
+{"ajuste": <-2|-1|0|1|2>, "justificativa": "frase curta em PT-BR", "impostos": {"residencial": {"pobre": N, "medio": N, "rico": N}, "comercial": {"pobre": N, "medio": N, "rico": N}, "industrial": {"pobre": N, "medio": N, "rico": N}}}`;
+
+    const url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=openai&private=true`;
+    const resp = await axios.get(url, { timeout: 30000 });
+    const texto = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data);
+
+    const match = texto.match(/\{[\s\S]*\}/);
+    if (!match) return res.status(500).json({ erro: "resposta inválida da IA" });
+    const json = JSON.parse(match[0]);
+
+    const clamp = (v) => Math.max(0, Math.min(50, Math.round(Number(v) || 0)));
+    const impostos = {
+      residencial: { pobre: clamp(json.impostos?.residencial?.pobre), medio: clamp(json.impostos?.residencial?.medio), rico: clamp(json.impostos?.residencial?.rico) },
+      comercial: { pobre: clamp(json.impostos?.comercial?.pobre), medio: clamp(json.impostos?.comercial?.medio), rico: clamp(json.impostos?.comercial?.rico) },
+      industrial: { pobre: clamp(json.impostos?.industrial?.pobre), medio: clamp(json.impostos?.industrial?.medio), rico: clamp(json.impostos?.industrial?.rico) },
+    };
+
+    res.json({ ajuste: json.ajuste || 0, justificativa: json.justificativa || "", impostos });
+  } catch (e) {
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
