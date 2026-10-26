@@ -275,10 +275,20 @@ app.post("/livekit/token", async (req, res) => {
 
 let tokens = [];
 
+// 🎨 DESENHO NO GRID
+let drawings = [];
+
+// 🎨 POSSE DE CORES
+const colorsInUse = {};    // { cor: socketId }
+const socketColors = {};   // { socketId: cor }
+
 io.on("connection", (socket) => {
   console.log("🟢 Conectado:", socket.id);
 
+  // 🟢 TOKENS
   socket.emit("init", tokens);
+  socket.emit("drawings_init", drawings);
+  socket.emit("colors_in_use", colorsInUse);
 
   socket.on("addToken", (token) => {
     tokens.push(token);
@@ -302,6 +312,7 @@ io.on("connection", (socket) => {
     io.emit("reorder", tokens);
   });
 
+  // 🎵 MÚSICA
   socket.on("play-music", (url) => {
     console.log('🎵 Play recebido:', url);
     socket.broadcast.emit("play-music", url);
@@ -321,8 +332,82 @@ io.on("connection", (socket) => {
     socket.broadcast.emit("volume-music", data);
   });
 
+  // ============================================================
+  // 🎨 DESENHO NO GRID (relay em tempo real)
+  // ============================================================
+  socket.on("draw_start", (stroke) => {
+    drawings.push(stroke);
+    if (drawings.length > 2000) drawings.shift();
+    socket.broadcast.emit("draw_start", stroke);
+  });
+
+  socket.on("draw_update", ({ id, points }) => {
+    const s = drawings.find((x) => x.id === id);
+    if (s) s.points = points;
+    socket.broadcast.emit("draw_update", { id, points });
+  });
+
+  socket.on("draw_end", ({ id }) => {
+    socket.broadcast.emit("draw_end", { id });
+  });
+
+  // 🧹 Apagar um traço específico (por id) — TODOS recebem
+  socket.on("draw_erase", ({ id }) => {
+    if (!id) return;
+    drawings = drawings.filter((d) => d.id !== id);
+    io.emit("draw_erase", { id });
+  });
+
+  // ↩️ Undo — apaga vários traços de uma vez (Ctrl+Z segurado)
+  socket.on("draw_undo", ({ ids }) => {
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    const setIds = new Set(ids);
+    drawings = drawings.filter((d) => !setIds.has(d.id));
+    io.emit("draw_undo", { ids });
+  });
+
+  socket.on("draw_clear", () => {
+    drawings = [];
+    io.emit("draw_clear");
+  });
+
+  // ============================================================
+  // 🎨 POSSE DE CORES (uma cor por jogador)
+  // ============================================================
+  socket.on("color_claim", ({ color }) => {
+    const dono = colorsInUse[color];
+    if (dono && dono !== socket.id) {
+      socket.emit("color_claim_result", { ok: false, color });
+      return;
+    }
+    const corAntiga = socketColors[socket.id];
+    if (corAntiga) delete colorsInUse[corAntiga];
+
+    colorsInUse[color] = socket.id;
+    socketColors[socket.id] = color;
+    io.emit("colors_in_use", colorsInUse);
+    socket.emit("color_claim_result", { ok: true, color });
+  });
+
+  socket.on("color_release", () => {
+    const cor = socketColors[socket.id];
+    if (cor) {
+      delete colorsInUse[cor];
+      delete socketColors[socket.id];
+      io.emit("colors_in_use", colorsInUse);
+    }
+  });
+
+  // 🟢 DISCONNECT
   socket.on("disconnect", () => {
     console.log("🔴 Desconectado:", socket.id);
+    // Libera cor ao sair
+    const cor = socketColors[socket.id];
+    if (cor) {
+      delete colorsInUse[cor];
+      delete socketColors[socket.id];
+      io.emit("colors_in_use", colorsInUse);
+    }
   });
 });
 
