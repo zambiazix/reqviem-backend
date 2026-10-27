@@ -17,6 +17,7 @@ import { PassThrough } from 'stream';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import cron from 'node-cron';
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 initializeApp({
@@ -1379,6 +1380,140 @@ Responda APENAS JSON neste formato exato:
     res.json({ ajuste: json.ajuste || 0, justificativa: json.justificativa || "", impostos });
   } catch (e) {
     res.status(500).json({ erro: e.message });
+  }
+});
+
+// 🟢🟢🟢 RESET DIÁRIO DE ESTOQUE 🟢🟢🟢
+// Todo dia às 12:00 BRT, cada item de cada loja recebe estoque aleatório entre 0 e 50.
+async function resetarTodosOsEstoques() {
+  const agoraISO = new Date().toISOString();
+  console.log(`🔄 Reset diário de estoque iniciado em ${agoraISO}`);
+
+  let totalAtualizados = 0;
+  let totalLojas = 0;
+
+  try {
+    const paisesSnap = await adminDb.collection('comercio_paises').get();
+
+    for (const paisDoc of paisesSnap.docs) {
+      const cidadesSnap = await adminDb
+        .collection('comercio_paises').doc(paisDoc.id)
+        .collection('cidades').get();
+
+      for (const cidadeDoc of cidadesSnap.docs) {
+        const lojasSnap = await adminDb
+          .collection('comercio_paises').doc(paisDoc.id)
+          .collection('cidades').doc(cidadeDoc.id)
+          .collection('lojas').get();
+
+        for (const lojaDoc of lojasSnap.docs) {
+          const itensSnap = await adminDb
+            .collection('comercio_paises').doc(paisDoc.id)
+            .collection('cidades').doc(cidadeDoc.id)
+            .collection('lojas').doc(lojaDoc.id)
+            .collection('itens').get();
+
+          if (itensSnap.empty) continue;
+
+          // Batch tem limite de 500 ops — processa em chunks de 450
+          const itensArray = itensSnap.docs;
+          for (let i = 0; i < itensArray.length; i += 450) {
+            const chunk = itensArray.slice(i, i + 450);
+            const batch = adminDb.batch();
+
+            chunk.forEach((itemDoc) => {
+              const novoEstoque = Math.floor(Math.random() * 51); // 0 a 50
+              batch.update(itemDoc.ref, { estoque: novoEstoque });
+              totalAtualizados++;
+            });
+
+            await batch.commit();
+          }
+          totalLojas++;
+        }
+      }
+    }
+
+    await adminDb.collection('game').doc('estoque_reset').set({
+      ultimoReset: agoraISO,
+      totalAtualizados,
+      totalLojas,
+    }, { merge: true });
+
+    console.log(`✅ Reset concluído: ${totalAtualizados} itens em ${totalLojas} lojas`);
+    return { ok: true, totalAtualizados, totalLojas, ultimoReset: agoraISO };
+  } catch (err) {
+    console.error('❌ Erro no reset de estoque:', err);
+    return { ok: false, error: err.message };
+  }
+}
+
+// 🟢 Helper: timestamp do "último limite de reset" (12:00 BRT de hoje ou ontem)
+function getLimiteResetMs() {
+  const agora = new Date();
+  // 12:00 BRT = 15:00 UTC
+  const resetHojeUTC = Date.UTC(
+    agora.getUTCFullYear(),
+    agora.getUTCMonth(),
+    agora.getUTCDate(),
+    15, 0, 0, 0
+  );
+  return agora.getTime() >= resetHojeUTC ? resetHojeUTC : resetHojeUTC - 24 * 60 * 60 * 1000;
+}
+
+// 🟢 Helper: precisa resetar? (baseado no último reset salvo)
+async function precisaResetar() {
+  const snap = await adminDb.collection('game').doc('estoque_reset').get();
+  if (!snap.exists) return true;
+  const ultimoReset = snap.data()?.ultimoReset;
+  if (!ultimoReset) return true;
+  return new Date(ultimoReset).getTime() < getLimiteResetMs();
+}
+
+// 🟢 Cron principal (12:00 BRT)
+cron.schedule('0 12 * * *', async () => {
+  console.log('⏰ Cron de reset de estoque disparou');
+  await resetarTodosOsEstoques();
+}, { timezone: 'America/Sao_Paulo' });
+
+// 🟢 Endpoint: qualquer usuário autenticado pode chamar; só executa se ainda não foi resetado hoje
+app.post('/api/resetar-estoque-se-necessario', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(401).json({ executado: false, error: 'Email obrigatório' });
+
+    try {
+      await adminAuth.getUserByEmail(email);
+    } catch {
+      return res.status(401).json({ executado: false, error: 'Usuário inválido' });
+    }
+
+    const precisa = await precisaResetar();
+    if (!precisa) {
+      const snap = await adminDb.collection('game').doc('estoque_reset').get();
+      return res.json({ executado: false, motivo: 'Já resetado hoje', ultimoReset: snap.data()?.ultimoReset });
+    }
+
+    const resultado = await resetarTodosOsEstoques();
+    res.json({ executado: true, ...resultado });
+  } catch (err) {
+    console.error('Erro endpoint reset:', err);
+    res.status(500).json({ executado: false, error: err.message });
+  }
+});
+
+// 🟢 Endpoint: Mestre força reset manual (ignora check de "já resetou hoje")
+app.post('/api/admin/resetar-estoque-agora', async (req, res) => {
+  try {
+    const { mestreEmail } = req.body;
+    const MASTER_EMAIL = 'mestre@reqviemrpg.com';
+    if (mestreEmail !== MASTER_EMAIL) {
+      return res.status(403).json({ error: 'Apenas o Mestre pode forçar reset' });
+    }
+    const resultado = await resetarTodosOsEstoques();
+    res.json(resultado);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
