@@ -192,7 +192,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       contentType: file.mimetype
     });
     formData.append("upload_preset", "rpg_musicas");
-    formData.append("resource_type", "auto");
+    // O resource_type já está na URL abaixo, não deve ir no formData
     
     console.log("📤 Enviando para Cloudinary...");
     
